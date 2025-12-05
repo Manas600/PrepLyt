@@ -56,6 +56,7 @@ export default function MeetingRoom() {
   const [feedbackFeed, setFeedbackFeed] = useState<Feedback[]>([]);
   const [isLoadingRoom, setIsLoadingRoom] = useState(true);
   const [ratingTarget, setRatingTarget] = useState<Participant | null>(null);
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
 
   useEffect(() => {
     if (!loading && !profile) {
@@ -227,9 +228,66 @@ export default function MeetingRoom() {
     navigate('/dashboard');
   };
 
-  const handleOpenMeetingLink = () => {
-    if (room?.meeting_link) {
+  const handleOpenMeetingLink = async () => {
+    if (!room?.meeting_link || !profile) return;
+
+    // Check if user is already in participants
+    const alreadyJoined = participants.some(p => p.id === profile.id);
+    
+    if (alreadyJoined) {
+      // Already checked in, just open the link
       window.open(room.meeting_link, '_blank');
+      return;
+    }
+
+    setIsCheckingIn(true);
+    
+    try {
+      // Fetch the latest participants to avoid race conditions
+      const { data: currentRoom, error: fetchError } = await supabase
+        .from('rooms')
+        .select('participants')
+        .eq('id', roomId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const currentParticipants = (currentRoom?.participants as unknown as Participant[]) || [];
+      
+      // Check again if already in participants (in case of concurrent joins)
+      if (!currentParticipants.some(p => p.id === profile.id)) {
+        const newParticipant: Participant = {
+          id: profile.id,
+          name: profile.name,
+          role: profile.role
+        };
+
+        const updatedParticipants = [...currentParticipants, newParticipant];
+
+        const { error: updateError } = await supabase
+          .from('rooms')
+          .update({ participants: JSON.parse(JSON.stringify(updatedParticipants)) })
+          .eq('id', roomId);
+
+        if (updateError) throw updateError;
+      }
+
+      // Success - open the meeting link
+      window.open(room.meeting_link, '_blank');
+      
+      toast({
+        title: 'Checked in!',
+        description: 'You are now visible in the session roster.',
+      });
+    } catch (error) {
+      console.error('Error checking in:', error);
+      toast({
+        title: 'Check-in failed',
+        description: 'Could not join the session. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsCheckingIn(false);
     }
   };
 
@@ -328,9 +386,18 @@ export default function MeetingRoom() {
             </div>
             
             {room.meeting_link && (
-              <Button onClick={handleOpenMeetingLink} className="gap-2">
-                <ExternalLink className="h-4 w-4" />
-                Join Video Call
+              <Button onClick={handleOpenMeetingLink} className="gap-2" disabled={isCheckingIn}>
+                {isCheckingIn ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Checking in...
+                  </>
+                ) : (
+                  <>
+                    <ExternalLink className="h-4 w-4" />
+                    Join Video Call
+                  </>
+                )}
               </Button>
             )}
           </div>
@@ -346,9 +413,18 @@ export default function MeetingRoom() {
               <p className="font-medium text-foreground">Video Call Ready</p>
               <p className="text-sm text-muted-foreground">Click the button to join the external video call in a new tab</p>
             </div>
-            <Button size="lg" onClick={handleOpenMeetingLink} className="gap-2">
-              <ExternalLink className="h-5 w-5" />
-              Open Meeting Link
+            <Button size="lg" onClick={handleOpenMeetingLink} className="gap-2" disabled={isCheckingIn}>
+              {isCheckingIn ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Checking in...
+                </>
+              ) : (
+                <>
+                  <ExternalLink className="h-5 w-5" />
+                  Open Meeting Link
+                </>
+              )}
             </Button>
           </div>
         )}
