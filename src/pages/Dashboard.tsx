@@ -4,21 +4,20 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { CreateSessionModal } from '@/components/CreateSessionModal';
 import { 
   LogOut, 
   Trophy, 
   Zap, 
   Star, 
-  TrendingUp,
   Users,
-  Video,
   Calendar,
   ChevronRight,
   Loader2,
   MessageSquare,
-  Briefcase,
-  PieChart,
-  Laptop
+  Plus,
+  ExternalLink,
+  Circle
 } from 'lucide-react';
 
 interface Room {
@@ -26,51 +25,21 @@ interface Room {
   topic: string;
   domain: string;
   status: string;
+  meeting_link: string | null;
   participants: { id: string; name: string; role: string }[];
+  host_id: string;
   created_at: string;
+  host?: { name: string };
 }
-
-const DOMAINS = [
-  {
-    id: 'marketing',
-    name: 'Marketing',
-    icon: TrendingUp,
-    color: 'from-pink-500 to-rose-500',
-    bgColor: 'bg-pink-500/10',
-    topics: ['AI in Digital Marketing', 'Social Media Strategy 2024', 'Brand Building in Gen-Z Era']
-  },
-  {
-    id: 'tech',
-    name: 'Technology',
-    icon: Laptop,
-    color: 'from-blue-500 to-cyan-500',
-    bgColor: 'bg-blue-500/10',
-    topics: ['Future of AI', 'Cloud Computing Trends', 'Cybersecurity Challenges']
-  },
-  {
-    id: 'finance',
-    name: 'Finance',
-    icon: PieChart,
-    color: 'from-emerald-500 to-teal-500',
-    bgColor: 'bg-emerald-500/10',
-    topics: ['Cryptocurrency Adoption', 'Sustainable Investing', 'FinTech Revolution']
-  },
-  {
-    id: 'business',
-    name: 'Business',
-    icon: Briefcase,
-    color: 'from-amber-500 to-orange-500',
-    bgColor: 'bg-amber-500/10',
-    topics: ['Remote Work Culture', 'Startup Ecosystem', 'Global Supply Chain']
-  }
-];
 
 export default function Dashboard() {
   const { profile, signOut, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [upcomingSessions, setUpcomingSessions] = useState<Room[]>([]);
+  const [activeRooms, setActiveRooms] = useState<Room[]>([]);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(true);
   const [isJoining, setIsJoining] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
     if (!loading && !profile) {
@@ -79,22 +48,52 @@ export default function Dashboard() {
   }, [profile, loading, navigate]);
 
   useEffect(() => {
-    if (profile?.role === 'expert') {
-      fetchUpcomingSessions();
+    if (profile) {
+      fetchActiveRooms();
+      
+      // Subscribe to realtime room updates
+      const channel = supabase
+        .channel('rooms-list')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'rooms' },
+          () => fetchActiveRooms()
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [profile]);
 
-  const fetchUpcomingSessions = async () => {
+  const fetchActiveRooms = async () => {
+    setIsLoadingRooms(true);
     const { data } = await supabase
       .from('rooms')
       .select('*')
       .in('status', ['waiting', 'live'])
-      .order('created_at', { ascending: false })
-      .limit(5);
+      .order('created_at', { ascending: false });
 
     if (data) {
-      setUpcomingSessions(data as unknown as Room[]);
+      // Fetch host names
+      const hostIds = [...new Set(data.map(r => r.host_id).filter(Boolean))];
+      const { data: hosts } = await supabase
+        .from('profiles')
+        .select('id, name')
+        .in('id', hostIds);
+
+      const hostsMap = new Map(hosts?.map(h => [h.id, h.name]) || []);
+      
+      const roomsWithHosts = data.map(room => ({
+        ...room,
+        participants: (room.participants as { id: string; name: string; role: string }[]) || [],
+        host: room.host_id ? { name: hostsMap.get(room.host_id) || 'Unknown' } : undefined
+      }));
+      
+      setActiveRooms(roomsWithHosts);
     }
+    setIsLoadingRooms(false);
   };
 
   const getLevel = (points: number) => {
@@ -103,72 +102,6 @@ export default function Dashboard() {
     if (points < 600) return { level: 3, title: 'Intermediate', next: 600 };
     if (points < 1000) return { level: 4, title: 'Advanced', next: 1000 };
     return { level: 5, title: 'Master', next: points };
-  };
-
-  const handleJoinDomain = async (domain: typeof DOMAINS[0]) => {
-    if (!profile) return;
-    
-    setIsJoining(domain.id);
-
-    try {
-      // Check for existing waiting room in this domain
-      const { data: existingRoom } = await supabase
-        .from('rooms')
-        .select('*')
-        .eq('domain', domain.id)
-        .eq('status', 'waiting')
-        .maybeSingle();
-
-      let roomId: string;
-
-      if (existingRoom) {
-        // Join existing room
-        roomId = existingRoom.id;
-        const participants = existingRoom.participants as { id: string; name: string; role: string }[] || [];
-        
-        // Check if already in room
-        if (!participants.find(p => p.id === profile.id)) {
-          const updatedParticipants = [
-            ...participants,
-            { id: profile.id, name: profile.name, role: profile.role }
-          ];
-
-          await supabase
-            .from('rooms')
-            .update({ participants: updatedParticipants })
-            .eq('id', roomId);
-        }
-      } else {
-        // Create new room
-        const randomTopic = domain.topics[Math.floor(Math.random() * domain.topics.length)];
-        
-        const { data: newRoom, error } = await supabase
-          .from('rooms')
-          .insert({
-            topic: randomTopic,
-            domain: domain.id,
-            status: 'waiting',
-            participants: [{ id: profile.id, name: profile.name, role: profile.role }],
-            host_id: profile.id
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        roomId = newRoom.id;
-      }
-
-      navigate(`/room/${roomId}`);
-    } catch (error) {
-      console.error('Error joining room:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to join the discussion. Please try again.',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsJoining(null);
-    }
   };
 
   const handleJoinRoom = async (roomId: string) => {
@@ -184,7 +117,7 @@ export default function Dashboard() {
         .single();
 
       if (room) {
-        const participants = room.participants as { id: string; name: string; role: string }[] || [];
+        const participants = (room.participants as { id: string; name: string; role: string }[]) || [];
         
         if (!participants.find(p => p.id === profile.id)) {
           const updatedParticipants = [
@@ -212,6 +145,32 @@ export default function Dashboard() {
     }
   };
 
+  const handleCreateSession = async (data: { domain: string; topic: string; meetingLink: string }) => {
+    if (!profile) return;
+
+    const { data: newRoom, error } = await supabase
+      .from('rooms')
+      .insert({
+        topic: data.topic,
+        domain: data.domain,
+        meeting_link: data.meetingLink,
+        status: 'waiting',
+        participants: [{ id: profile.id, name: profile.name, role: profile.role }],
+        host_id: profile.id
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    toast({
+      title: 'Session created',
+      description: 'Your session is now live. Students can join.'
+    });
+
+    navigate(`/room/${newRoom.id}`);
+  };
+
   const handleSignOut = async () => {
     await signOut();
     navigate('/');
@@ -227,6 +186,7 @@ export default function Dashboard() {
 
   const levelInfo = getLevel(profile.points);
   const progress = (profile.points / levelInfo.next) * 100;
+  const isExpert = profile.role === 'expert';
 
   return (
     <div className="min-h-screen bg-background">
@@ -245,11 +205,11 @@ export default function Dashboard() {
                 <span className="text-muted-foreground">Welcome,</span>
                 <span className="font-medium text-foreground">{profile.name}</span>
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                  profile.role === 'expert' 
+                  isExpert 
                     ? 'bg-warning/20 text-warning' 
                     : 'bg-primary/20 text-primary'
                 }`}>
-                  {profile.role === 'expert' ? 'Expert' : 'Student'}
+                  {isExpert ? 'Expert' : 'Student'}
                 </span>
               </div>
               <Button variant="ghost" size="icon" onClick={handleSignOut}>
@@ -321,55 +281,79 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Expert View - Upcoming Sessions */}
-        {profile.role === 'expert' && (
-          <section className="mb-8 animate-slide-up" style={{ animationDelay: '0.1s' }}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-primary" />
-                Sessions to Moderate
-              </h2>
-              <Button variant="ghost" size="sm" onClick={fetchUpcomingSessions}>
-                Refresh
-              </Button>
+        {/* Expert: Create Session Button */}
+        {isExpert && (
+          <div className="mb-8 animate-slide-up" style={{ animationDelay: '0.1s' }}>
+            <Button 
+              size="lg" 
+              onClick={() => setShowCreateModal(true)}
+              className="w-full sm:w-auto"
+            >
+              <Plus className="mr-2 h-5 w-5" />
+              Create New Session
+            </Button>
+          </div>
+        )}
+
+        {/* Active Sessions */}
+        <section className="animate-slide-up" style={{ animationDelay: '0.2s' }}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-primary" />
+              {isExpert ? 'Active Sessions' : 'Available Sessions'}
+            </h2>
+            <Button variant="ghost" size="sm" onClick={fetchActiveRooms}>
+              Refresh
+            </Button>
+          </div>
+
+          {isLoadingRooms ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-            
-            {upcomingSessions.length > 0 ? (
-              <div className="space-y-3">
-                {upcomingSessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className="bg-card border border-border rounded-xl p-4 flex items-center justify-between hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                        session.status === 'live' ? 'bg-success/20' : 'bg-muted'
-                      }`}>
-                        <Video className={`w-6 h-6 ${
-                          session.status === 'live' ? 'text-success' : 'text-muted-foreground'
+          ) : activeRooms.length > 0 ? (
+            <div className="grid gap-4">
+              {activeRooms.map((room) => (
+                <div
+                  key={room.id}
+                  className="bg-card border border-border rounded-xl p-5 hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Circle className={`w-2.5 h-2.5 ${
+                          room.status === 'live' ? 'fill-success text-success' : 'fill-warning text-warning'
                         }`} />
+                        <span className={`text-xs font-medium ${
+                          room.status === 'live' ? 'text-success' : 'text-warning'
+                        }`}>
+                          {room.status === 'live' ? 'Live Now' : 'Waiting'}
+                        </span>
+                        <span className="text-xs text-muted-foreground">•</span>
+                        <span className="text-xs text-muted-foreground capitalize">{room.domain}</span>
                       </div>
-                      <div>
-                        <p className="font-medium text-foreground">{session.topic}</p>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <span className="capitalize">{session.domain}</span>
-                          <span>•</span>
-                          <span>{(session.participants as unknown[])?.length || 0} participants</span>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            session.status === 'live' 
-                              ? 'bg-success/20 text-success' 
-                              : 'bg-warning/20 text-warning'
-                          }`}>
-                            {session.status === 'live' ? 'Live' : 'Waiting'}
-                          </span>
+                      <h3 className="text-lg font-semibold text-foreground mb-1">{room.topic}</h3>
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        {room.host && (
+                          <span>Hosted by <span className="text-foreground font-medium">{room.host.name}</span></span>
+                        )}
+                        <span className="flex items-center gap-1">
+                          <Users className="w-3.5 h-3.5" />
+                          {room.participants.length} joined
+                        </span>
+                      </div>
+                      {room.meeting_link && (
+                        <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
+                          <ExternalLink className="w-3 h-3" />
+                          <span>External video call available</span>
                         </div>
-                      </div>
+                      )}
                     </div>
                     <Button 
-                      onClick={() => handleJoinRoom(session.id)}
-                      disabled={isJoining === session.id}
+                      onClick={() => handleJoinRoom(room.id)}
+                      disabled={isJoining === room.id}
                     >
-                      {isJoining === session.id ? (
+                      {isJoining === room.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <>
@@ -378,56 +362,29 @@ export default function Dashboard() {
                       )}
                     </Button>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="bg-card border border-border rounded-xl p-8 text-center">
-                <Video className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground">No active sessions at the moment</p>
-                <p className="text-sm text-muted-foreground mt-1">Sessions will appear here when students start discussions</p>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Domain Selection */}
-        <section className="animate-slide-up" style={{ animationDelay: '0.2s' }}>
-          <h2 className="text-xl font-bold text-foreground mb-4 flex items-center gap-2">
-            <Video className="w-5 h-5 text-primary" />
-            {profile.role === 'student' ? 'Join a Discussion' : 'Browse Domains'}
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {DOMAINS.map((domain) => (
-              <button
-                key={domain.id}
-                onClick={() => handleJoinDomain(domain)}
-                disabled={isJoining === domain.id}
-                className="domain-card bg-card border border-border text-left group"
-              >
-                <div className={`w-14 h-14 rounded-xl ${domain.bgColor} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
-                  <domain.icon className={`w-7 h-7 bg-gradient-to-r ${domain.color} bg-clip-text`} style={{ color: 'transparent', backgroundClip: 'text', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }} />
                 </div>
-                <h3 className="text-lg font-bold text-foreground mb-1">{domain.name}</h3>
-                <p className="text-sm text-muted-foreground mb-3">
-                  {domain.topics[0]}
-                </p>
-                <div className="flex items-center text-primary text-sm font-medium">
-                  {isJoining === domain.id ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Joining...
-                    </>
-                  ) : (
-                    <>
-                      Join now <ChevronRight className="ml-1 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                    </>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-card border border-border rounded-xl p-12 text-center">
+              <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+              <p className="text-lg font-medium text-foreground mb-1">No active sessions</p>
+              <p className="text-sm text-muted-foreground">
+                {isExpert 
+                  ? 'Create a new session to get started'
+                  : 'Check back soon or ask an expert to create a session'}
+              </p>
+            </div>
+          )}
         </section>
       </main>
+
+      {/* Create Session Modal */}
+      <CreateSessionModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSubmit={handleCreateSession}
+      />
     </div>
   );
 }

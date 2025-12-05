@@ -99,6 +99,7 @@ export type Database = {
           domain: string
           host_id: string | null
           id: string
+          meeting_link: string | null
           participants: Json | null
           status: string | null
           topic: string
@@ -108,6 +109,7 @@ export type Database = {
           domain: string
           host_id?: string | null
           id?: string
+          meeting_link?: string | null
           participants?: Json | null
           status?: string | null
           topic: string
@@ -117,6 +119,7 @@ export type Database = {
           domain?: string
           host_id?: string | null
           id?: string
+          meeting_link?: string | null
           participants?: Json | null
           status?: string | null
           topic?: string

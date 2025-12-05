@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -9,16 +9,14 @@ import {
   ArrowLeft, 
   Users, 
   Star, 
-  Mic, 
-  MicOff, 
-  Video, 
-  VideoOff,
-  PhoneOff,
   Loader2,
   MessageSquare,
   Crown,
   GraduationCap,
-  Briefcase
+  Briefcase,
+  ExternalLink,
+  Clock,
+  Circle
 } from 'lucide-react';
 
 interface Participant {
@@ -27,45 +25,24 @@ interface Participant {
   role: string;
 }
 
+interface Feedback {
+  id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+  student: { name: string } | null;
+  expert: { name: string } | null;
+}
+
 interface Room {
   id: string;
   topic: string;
   domain: string;
   status: string;
+  meeting_link: string | null;
   participants: Participant[];
   host_id: string;
   created_at: string;
-}
-
-declare global {
-  interface Window {
-    JitsiMeetExternalAPI: new (domain: string, options: JitsiOptions) => JitsiAPI;
-  }
-}
-
-interface JitsiOptions {
-  roomName: string;
-  parentNode: HTMLElement;
-  width: string;
-  height: string;
-  configOverwrite: {
-    startWithAudioMuted: boolean;
-    startWithVideoMuted: boolean;
-    prejoinPageEnabled: boolean;
-  };
-  interfaceConfigOverwrite: {
-    TOOLBAR_BUTTONS: string[];
-    SHOW_JITSI_WATERMARK: boolean;
-    SHOW_WATERMARK_FOR_GUESTS: boolean;
-  };
-  userInfo: {
-    displayName: string;
-  };
-}
-
-interface JitsiAPI {
-  dispose: () => void;
-  executeCommand: (command: string, value?: boolean) => void;
 }
 
 export default function MeetingRoom() {
@@ -76,13 +53,9 @@ export default function MeetingRoom() {
   
   const [room, setRoom] = useState<Room | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [feedbackFeed, setFeedbackFeed] = useState<Feedback[]>([]);
   const [isLoadingRoom, setIsLoadingRoom] = useState(true);
-  const [isMuted, setIsMuted] = useState(true);
-  const [isVideoOff, setIsVideoOff] = useState(false);
   const [ratingTarget, setRatingTarget] = useState<Participant | null>(null);
-  
-  const jitsiContainerRef = useRef<HTMLDivElement>(null);
-  const jitsiApiRef = useRef<JitsiAPI | null>(null);
 
   useEffect(() => {
     if (!loading && !profile) {
@@ -104,7 +77,7 @@ export default function MeetingRoom() {
       if (error || !data) {
         toast({
           title: 'Room not found',
-          description: 'The discussion room does not exist.',
+          description: 'The session does not exist.',
           variant: 'destructive'
         });
         navigate('/dashboard');
@@ -114,10 +87,55 @@ export default function MeetingRoom() {
       setRoom(data as unknown as Room);
       setParticipants((data.participants as unknown as Participant[]) || []);
       setIsLoadingRoom(false);
+
+      // Update status to live if waiting
+      if (data.status === 'waiting') {
+        await supabase
+          .from('rooms')
+          .update({ status: 'live' })
+          .eq('id', roomId);
+      }
     };
 
     fetchRoom();
   }, [roomId, navigate, toast]);
+
+  // Fetch feedback for this room
+  useEffect(() => {
+    if (!roomId) return;
+
+    const fetchFeedback = async () => {
+      const { data } = await supabase
+        .from('feedback')
+        .select('id, rating, comment, created_at, student_id, expert_id')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        // Fetch names for feedback
+        const studentIds = [...new Set(data.map(f => f.student_id).filter(Boolean))];
+        const expertIds = [...new Set(data.map(f => f.expert_id).filter(Boolean))];
+        
+        const [{ data: students }, { data: experts }] = await Promise.all([
+          supabase.from('profiles').select('id, name').in('id', studentIds),
+          supabase.from('profiles').select('id, name').in('id', expertIds)
+        ]);
+
+        const studentsMap = new Map(students?.map(s => [s.id, s.name]) || []);
+        const expertsMap = new Map(experts?.map(e => [e.id, e.name]) || []);
+
+        const feedbackWithNames = data.map(f => ({
+          ...f,
+          student: f.student_id ? { name: studentsMap.get(f.student_id) || 'Unknown' } : null,
+          expert: f.expert_id ? { name: expertsMap.get(f.expert_id) || 'Unknown' } : null
+        }));
+
+        setFeedbackFeed(feedbackWithNames);
+      }
+    };
+
+    fetchFeedback();
+  }, [roomId]);
 
   // Subscribe to room updates
   useEffect(() => {
@@ -146,28 +164,45 @@ export default function MeetingRoom() {
     };
   }, [roomId]);
 
-  // Subscribe to feedback for real-time notifications
+  // Subscribe to feedback for real-time notifications and feed updates
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || !roomId) return;
 
     const channel = supabase
-      .channel('feedback-notifications')
+      .channel('feedback-realtime')
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'feedback',
-          filter: `student_id=eq.${profile.id}`
+          filter: `room_id=eq.${roomId}`
         },
-        (payload) => {
-          const feedback = payload.new as { rating: number; comment: string };
-          toast({
-            title: `You received ${feedback.rating} stars!`,
-            description: feedback.comment || 'Keep up the great work!',
-          });
-          // Refresh profile to get updated points
-          refreshProfile();
+        async (payload) => {
+          const feedback = payload.new as { id: string; rating: number; comment: string; student_id: string; expert_id: string; created_at: string };
+          
+          // Fetch names
+          const [{ data: student }, { data: expert }] = await Promise.all([
+            supabase.from('profiles').select('name').eq('id', feedback.student_id).single(),
+            supabase.from('profiles').select('name').eq('id', feedback.expert_id).single()
+          ]);
+
+          const newFeedback: Feedback = {
+            ...feedback,
+            student: student ? { name: student.name } : null,
+            expert: expert ? { name: expert.name } : null
+          };
+
+          setFeedbackFeed(prev => [newFeedback, ...prev]);
+
+          // Show toast for the student who received the rating
+          if (feedback.student_id === profile.id) {
+            toast({
+              title: `You received ${feedback.rating} stars!`,
+              description: feedback.comment || 'Keep up the great work!',
+            });
+            refreshProfile();
+          }
         }
       )
       .subscribe();
@@ -175,84 +210,9 @@ export default function MeetingRoom() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile, toast, refreshProfile]);
-
-  // Initialize Jitsi
-  useEffect(() => {
-    if (!room || !profile || !jitsiContainerRef.current) return;
-
-    // Load Jitsi script
-    const script = document.createElement('script');
-    script.src = 'https://meet.jit.si/external_api.js';
-    script.async = true;
-    script.onload = () => {
-      if (!jitsiContainerRef.current) return;
-
-      const options: JitsiOptions = {
-        roomName: `GD_Master_${roomId}`,
-        parentNode: jitsiContainerRef.current,
-        width: '100%',
-        height: '100%',
-        configOverwrite: {
-          startWithAudioMuted: profile.role === 'student',
-          startWithVideoMuted: false,
-          prejoinPageEnabled: false
-        },
-        interfaceConfigOverwrite: {
-          TOOLBAR_BUTTONS: [
-            'microphone', 'camera', 'closedcaptions', 'desktop',
-            'fullscreen', 'fodeviceselection', 'hangup', 'chat',
-            'settings', 'videoquality', 'tileview'
-          ],
-          SHOW_JITSI_WATERMARK: false,
-          SHOW_WATERMARK_FOR_GUESTS: false
-        },
-        userInfo: {
-          displayName: `${profile.name} (${profile.role})`
-        }
-      };
-
-      jitsiApiRef.current = new window.JitsiMeetExternalAPI('meet.jit.si', options);
-
-      // Update room status to live
-      if (room.status === 'waiting') {
-        supabase
-          .from('rooms')
-          .update({ status: 'live' })
-          .eq('id', roomId);
-      }
-    };
-
-    document.body.appendChild(script);
-
-    return () => {
-      if (jitsiApiRef.current) {
-        jitsiApiRef.current.dispose();
-      }
-      script.remove();
-    };
-  }, [room, profile, roomId]);
-
-  const handleToggleMute = () => {
-    if (jitsiApiRef.current) {
-      jitsiApiRef.current.executeCommand('toggleAudio');
-      setIsMuted(!isMuted);
-    }
-  };
-
-  const handleToggleVideo = () => {
-    if (jitsiApiRef.current) {
-      jitsiApiRef.current.executeCommand('toggleVideo');
-      setIsVideoOff(!isVideoOff);
-    }
-  };
+  }, [profile, roomId, toast, refreshProfile]);
 
   const handleLeave = async () => {
-    if (jitsiApiRef.current) {
-      jitsiApiRef.current.dispose();
-    }
-
-    // Remove participant from room
     if (profile && room) {
       const updatedParticipants = participants.filter(p => p.id !== profile.id);
       await supabase
@@ -267,6 +227,12 @@ export default function MeetingRoom() {
     navigate('/dashboard');
   };
 
+  const handleOpenMeetingLink = () => {
+    if (room?.meeting_link) {
+      window.open(room.meeting_link, '_blank');
+    }
+  };
+
   const handleRateStudent = (participant: Participant) => {
     setRatingTarget(participant);
   };
@@ -275,7 +241,6 @@ export default function MeetingRoom() {
     if (!profile || !ratingTarget || !roomId) return;
 
     try {
-      // Insert feedback
       await supabase
         .from('feedback')
         .insert({
@@ -286,7 +251,7 @@ export default function MeetingRoom() {
           comment
         });
 
-      // Update student points (rating * 10 points)
+      // Update student points
       const { data: studentProfile } = await supabase
         .from('profiles')
         .select('points')
@@ -316,9 +281,13 @@ export default function MeetingRoom() {
     }
   };
 
+  const formatTime = (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   if (loading || isLoadingRoom) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background dark">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
@@ -327,144 +296,221 @@ export default function MeetingRoom() {
   if (!room || !profile) return null;
 
   const isExpert = profile.role === 'expert';
+  const students = participants.filter(p => p.role === 'student');
+  const experts = participants.filter(p => p.role === 'expert');
 
   return (
-    <div className="min-h-screen bg-background dark">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="h-14 border-b border-border bg-card/50 backdrop-blur-xl flex items-center px-4 gap-4">
-        <Button variant="ghost" size="icon" onClick={handleLeave}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <MessageSquare className="w-4 h-4 text-primary-foreground" />
+      <header className="border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={handleLeave}>
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+                  <MessageSquare className="w-5 h-5 text-primary-foreground" />
+                </div>
+                <div>
+                  <h1 className="font-semibold text-foreground">{room.topic}</h1>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="capitalize">{room.domain}</span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <Circle className={`w-2 h-2 ${room.status === 'live' ? 'fill-success text-success' : 'fill-warning text-warning'}`} />
+                      {room.status === 'live' ? 'Live' : 'Waiting'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {room.meeting_link && (
+              <Button onClick={handleOpenMeetingLink} className="gap-2">
+                <ExternalLink className="h-4 w-4" />
+                Join Video Call
+              </Button>
+            )}
           </div>
-          <div>
-            <h1 className="font-semibold text-foreground text-sm">{room.topic}</h1>
-            <p className="text-xs text-muted-foreground capitalize">{room.domain} Discussion</p>
-          </div>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-            room.status === 'live' 
-              ? 'bg-success/20 text-success' 
-              : 'bg-warning/20 text-warning'
-          }`}>
-            {room.status === 'live' ? '● Live' : '○ Waiting'}
-          </span>
         </div>
       </header>
 
-      <div className="flex h-[calc(100vh-3.5rem)]">
-        {/* Video Area */}
-        <div className="flex-1 relative bg-card/30">
-          <div ref={jitsiContainerRef} className="absolute inset-0" />
-          
-          {/* Control Bar */}
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 p-2 rounded-full bg-card/90 backdrop-blur-xl border border-border shadow-lg">
-            <Button
-              variant={isMuted ? "destructive" : "secondary"}
-              size="icon"
-              className="rounded-full w-12 h-12"
-              onClick={handleToggleMute}
-            >
-              {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-            </Button>
-            <Button
-              variant={isVideoOff ? "destructive" : "secondary"}
-              size="icon"
-              className="rounded-full w-12 h-12"
-              onClick={handleToggleVideo}
-            >
-              {isVideoOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
-            </Button>
-            <Button
-              variant="destructive"
-              size="icon"
-              className="rounded-full w-12 h-12"
-              onClick={handleLeave}
-            >
-              <PhoneOff className="h-5 w-5" />
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Meeting Link Banner */}
+        {room.meeting_link && (
+          <div className="mb-6 p-4 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between">
+            <div>
+              <p className="font-medium text-foreground">Video Call Ready</p>
+              <p className="text-sm text-muted-foreground">Click the button to join the external video call in a new tab</p>
+            </div>
+            <Button size="lg" onClick={handleOpenMeetingLink} className="gap-2">
+              <ExternalLink className="h-5 w-5" />
+              Open Meeting Link
             </Button>
           </div>
-        </div>
+        )}
 
-        {/* Sidebar */}
-        <aside className="w-72 meeting-sidebar flex flex-col">
-          <div className="p-4 border-b border-border">
-            <h2 className="font-semibold text-foreground flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Participants ({participants.length})
-            </h2>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-            {participants.map((participant) => (
-              <div
-                key={participant.id}
-                className="flex items-center justify-between p-3 rounded-xl bg-secondary/50 hover:bg-secondary transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center ${
-                    participant.role === 'expert' 
-                      ? 'bg-warning/20' 
-                      : 'bg-primary/20'
-                  }`}>
-                    {participant.role === 'expert' ? (
-                      <Briefcase className="w-4 h-4 text-warning" />
-                    ) : (
-                      <GraduationCap className="w-4 h-4 text-primary" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground text-sm flex items-center gap-1">
-                      {participant.name}
-                      {room.host_id === participant.id && (
-                        <Crown className="w-3 h-3 text-star" />
+        <div className="grid lg:grid-cols-2 gap-6">
+          {/* Left Column - Roster */}
+          <div className="space-y-6">
+            {/* Students Roster */}
+            <div className="bg-card border border-border rounded-xl overflow-hidden">
+              <div className="p-4 border-b border-border bg-muted/30">
+                <h2 className="font-semibold text-foreground flex items-center gap-2">
+                  <GraduationCap className="w-5 h-5 text-primary" />
+                  Students ({students.length})
+                </h2>
+              </div>
+              <div className="p-4 space-y-2">
+                {students.length > 0 ? (
+                  students.map((participant) => (
+                    <div
+                      key={participant.id}
+                      className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                          <GraduationCap className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground flex items-center gap-2">
+                            {participant.name}
+                            {participant.id === profile.id && (
+                              <span className="text-xs text-primary">(You)</span>
+                            )}
+                          </p>
+                          <p className="text-xs text-muted-foreground">Student</p>
+                        </div>
+                      </div>
+                      
+                      {isExpert && participant.id !== profile.id && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-star hover:text-star hover:bg-star/10 gap-1"
+                          onClick={() => handleRateStudent(participant)}
+                        >
+                          <Star className="h-4 w-4" />
+                          Rate
+                        </Button>
                       )}
-                    </p>
-                    <p className="text-xs text-muted-foreground capitalize">{participant.role}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <GraduationCap className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">No students have joined yet</p>
                   </div>
-                </div>
-                
-                {isExpert && participant.role === 'student' && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-star hover:text-star hover:bg-star/10"
-                    onClick={() => handleRateStudent(participant)}
-                  >
-                    <Star className="h-4 w-4" />
-                  </Button>
                 )}
-
-                {!isExpert && participant.id === profile.id && (
-                  <span className="text-xs text-primary font-medium">You</span>
-                )}
-              </div>
-            ))}
-
-            {participants.length === 0 && (
-              <div className="text-center py-8">
-                <Users className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">No participants yet</p>
-              </div>
-            )}
-          </div>
-
-          {/* Expert Tip */}
-          {isExpert && (
-            <div className="p-4 border-t border-border">
-              <div className="p-3 rounded-lg bg-primary/10 text-sm">
-                <p className="text-primary font-medium">Expert Mode</p>
-                <p className="text-muted-foreground text-xs mt-1">
-                  Click the star icon next to a student's name to rate their performance.
-                </p>
               </div>
             </div>
-          )}
-        </aside>
-      </div>
+
+            {/* Experts Roster */}
+            <div className="bg-card border border-border rounded-xl overflow-hidden">
+              <div className="p-4 border-b border-border bg-muted/30">
+                <h2 className="font-semibold text-foreground flex items-center gap-2">
+                  <Briefcase className="w-5 h-5 text-warning" />
+                  Experts ({experts.length})
+                </h2>
+              </div>
+              <div className="p-4 space-y-2">
+                {experts.length > 0 ? (
+                  experts.map((participant) => (
+                    <div
+                      key={participant.id}
+                      className="flex items-center gap-3 p-3 rounded-lg bg-muted/30"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-warning/20 flex items-center justify-center">
+                        <Briefcase className="w-5 h-5 text-warning" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground flex items-center gap-2">
+                          {participant.name}
+                          {room.host_id === participant.id && (
+                            <Crown className="w-4 h-4 text-star" />
+                          )}
+                          {participant.id === profile.id && (
+                            <span className="text-xs text-primary">(You)</span>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Expert</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <Briefcase className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">No experts have joined yet</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column - Feedback Feed */}
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-border bg-muted/30">
+              <h2 className="font-semibold text-foreground flex items-center gap-2">
+                <Star className="w-5 h-5 text-star" />
+                Live Feedback Feed
+              </h2>
+            </div>
+            <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto">
+              {feedbackFeed.length > 0 ? (
+                feedbackFeed.map((feedback) => (
+                  <div
+                    key={feedback.id}
+                    className="p-4 rounded-lg bg-muted/30 border border-border/50"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <p className="font-medium text-foreground">
+                          {feedback.student?.name || 'Unknown Student'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Rated by {feedback.expert?.name || 'Unknown Expert'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {[...Array(5)].map((_, i) => (
+                          <Star
+                            key={i}
+                            className={`w-4 h-4 ${
+                              i < feedback.rating
+                                ? 'fill-star text-star'
+                                : 'text-muted-foreground'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    {feedback.comment && (
+                      <p className="text-sm text-muted-foreground">{feedback.comment}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {formatTime(feedback.created_at)}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-12">
+                  <Star className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                  <p className="font-medium text-foreground mb-1">No feedback yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    {isExpert 
+                      ? 'Click "Rate" next to a student to give feedback'
+                      : 'Feedback from experts will appear here in real-time'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </main>
 
       {/* Rating Modal */}
       <RatingModal
