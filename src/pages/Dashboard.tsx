@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, AppRole } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -17,7 +17,11 @@ import {
   MessageSquare,
   Plus,
   ExternalLink,
-  Circle
+  Circle,
+  Shield,
+  Briefcase,
+  GraduationCap,
+  Settings
 } from 'lucide-react';
 
 interface Room {
@@ -110,25 +114,29 @@ export default function Dashboard() {
     setIsJoining(roomId);
 
     try {
-      const { data: room } = await supabase
-        .from('rooms')
-        .select('*')
-        .eq('id', roomId)
-        .single();
+      // For students: Add them to participants before redirecting
+      // For experts/admins: Just redirect, they'll be added when opening the call
+      if (profile.role === 'student') {
+        const { data: room } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('id', roomId)
+          .single();
 
-      if (room) {
-        const participants = (room.participants as { id: string; name: string; role: string }[]) || [];
-        
-        if (!participants.find(p => p.id === profile.id)) {
-          const updatedParticipants = [
-            ...participants,
-            { id: profile.id, name: profile.name, role: profile.role }
-          ];
+        if (room) {
+          const participants = (room.participants as { id: string; name: string; role: string }[]) || [];
+          
+          if (!participants.find(p => p.id === profile.id)) {
+            const updatedParticipants = [
+              ...participants,
+              { id: profile.id, name: profile.name, role: profile.role }
+            ];
 
-          await supabase
-            .from('rooms')
-            .update({ participants: updatedParticipants })
-            .eq('id', roomId);
+            await supabase
+              .from('rooms')
+              .update({ participants: updatedParticipants })
+              .eq('id', roomId);
+          }
         }
       }
 
@@ -155,7 +163,7 @@ export default function Dashboard() {
         domain: data.domain,
         meeting_link: data.meetingLink,
         status: 'waiting',
-        participants: [{ id: profile.id, name: profile.name, role: profile.role }],
+        participants: [],
         host_id: profile.id
       })
       .select()
@@ -165,10 +173,11 @@ export default function Dashboard() {
 
     toast({
       title: 'Session created',
-      description: 'Your session is now live. Students can join.'
+      description: 'Your session is now live. Experts and students can join.'
     });
 
-    navigate(`/room/${newRoom.id}`);
+    setShowCreateModal(false);
+    fetchActiveRooms();
   };
 
   const handleSignOut = async () => {
@@ -186,7 +195,23 @@ export default function Dashboard() {
 
   const levelInfo = getLevel(profile.points);
   const progress = (profile.points / levelInfo.next) * 100;
+  const isAdmin = profile.role === 'admin';
   const isExpert = profile.role === 'expert';
+  const isStudent = profile.role === 'student';
+
+  const getRoleBadge = (role: AppRole) => {
+    switch (role) {
+      case 'admin':
+        return { label: 'Admin', color: 'bg-success/20 text-success', icon: Shield };
+      case 'expert':
+        return { label: 'Expert', color: 'bg-warning/20 text-warning', icon: Briefcase };
+      default:
+        return { label: 'Student', color: 'bg-primary/20 text-primary', icon: GraduationCap };
+    }
+  };
+
+  const roleBadge = getRoleBadge(profile.role);
+  const RoleIcon = roleBadge.icon;
 
   return (
     <div className="min-h-screen bg-background">
@@ -204,12 +229,9 @@ export default function Dashboard() {
               <div className="hidden sm:flex items-center gap-2 text-sm">
                 <span className="text-muted-foreground">Welcome,</span>
                 <span className="font-medium text-foreground">{profile.name}</span>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                  isExpert 
-                    ? 'bg-warning/20 text-warning' 
-                    : 'bg-primary/20 text-primary'
-                }`}>
-                  {isExpert ? 'Expert' : 'Student'}
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 ${roleBadge.color}`}>
+                  <RoleIcon className="w-3 h-3" />
+                  {roleBadge.label}
                 </span>
               </div>
               <Button variant="ghost" size="icon" onClick={handleSignOut}>
@@ -221,77 +243,105 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Section */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 animate-slide-up">
-          <div className="stat-card">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Trophy className="w-5 h-5 text-primary" />
+        {/* Admin Control Panel Header */}
+        {isAdmin && (
+          <div className="mb-8 p-6 bg-gradient-to-r from-success/10 to-success/5 border border-success/20 rounded-xl animate-slide-up">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-success/20 flex items-center justify-center">
+                  <Settings className="w-6 h-6 text-success" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-foreground">Admin Control Panel</h2>
+                  <p className="text-sm text-muted-foreground">Manage sessions and organize discussions</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Level</p>
-                <p className="text-xl font-bold text-foreground">{levelInfo.level}</p>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">{levelInfo.title}</p>
-          </div>
-
-          <div className="stat-card">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
-                <Zap className="w-5 h-5 text-success" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">XP Points</p>
-                <p className="text-xl font-bold text-foreground">{profile.points}</p>
-              </div>
-            </div>
-            <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-success rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(progress, 100)}%` }}
-              />
+              <Button 
+                size="lg" 
+                onClick={() => setShowCreateModal(true)}
+                className="bg-success hover:bg-success/90"
+              >
+                <Plus className="mr-2 h-5 w-5" />
+                Schedule Session
+              </Button>
             </div>
           </div>
+        )}
 
-          <div className="stat-card">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-star/10 flex items-center justify-center">
-                <Star className="w-5 h-5 text-star" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Avg. Rating</p>
-                <p className="text-xl font-bold text-foreground">--</p>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">Complete a session</p>
-          </div>
-
-          <div className="stat-card">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-accent flex items-center justify-center">
-                <Users className="w-5 h-5 text-accent-foreground" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Sessions</p>
-                <p className="text-xl font-bold text-foreground">0</p>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">Join your first!</p>
-          </div>
-        </div>
-
-        {/* Expert: Create Session Button */}
+        {/* Expert Welcome Header */}
         {isExpert && (
-          <div className="mb-8 animate-slide-up" style={{ animationDelay: '0.1s' }}>
-            <Button 
-              size="lg" 
-              onClick={() => setShowCreateModal(true)}
-              className="w-full sm:w-auto"
-            >
-              <Plus className="mr-2 h-5 w-5" />
-              Create New Session
-            </Button>
+          <div className="mb-8 p-6 bg-gradient-to-r from-warning/10 to-warning/5 border border-warning/20 rounded-xl animate-slide-up">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-warning/20 flex items-center justify-center">
+                <Briefcase className="w-6 h-6 text-warning" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Ready to Evaluate</h2>
+                <p className="text-sm text-muted-foreground">Select a session below to moderate and provide feedback</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Student Stats Section - Only show for students */}
+        {isStudent && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 animate-slide-up">
+            <div className="stat-card">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Trophy className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Level</p>
+                  <p className="text-xl font-bold text-foreground">{levelInfo.level}</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">{levelInfo.title}</p>
+            </div>
+
+            <div className="stat-card">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+                  <Zap className="w-5 h-5 text-success" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">XP Points</p>
+                  <p className="text-xl font-bold text-foreground">{profile.points}</p>
+                </div>
+              </div>
+              <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-success rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(progress, 100)}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-star/10 flex items-center justify-center">
+                  <Star className="w-5 h-5 text-star" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Avg. Rating</p>
+                  <p className="text-xl font-bold text-foreground">--</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">Complete a session</p>
+            </div>
+
+            <div className="stat-card">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-accent flex items-center justify-center">
+                  <Users className="w-5 h-5 text-accent-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Sessions</p>
+                  <p className="text-xl font-bold text-foreground">0</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">Join your first!</p>
+            </div>
           </div>
         )}
 
@@ -300,7 +350,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
               <Calendar className="w-5 h-5 text-primary" />
-              {isExpert ? 'Active Sessions' : 'Available Sessions'}
+              {isAdmin ? 'All Sessions' : isExpert ? 'Available Sessions' : 'Upcoming Sessions'}
             </h2>
             <Button variant="ghost" size="sm" onClick={fetchActiveRooms}>
               Refresh
@@ -334,12 +384,9 @@ export default function Dashboard() {
                       </div>
                       <h3 className="text-lg font-semibold text-foreground mb-1">{room.topic}</h3>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        {room.host && (
-                          <span>Hosted by <span className="text-foreground font-medium">{room.host.name}</span></span>
-                        )}
                         <span className="flex items-center gap-1">
                           <Users className="w-3.5 h-3.5" />
-                          {room.participants.length} joined
+                          {room.participants.length} participants
                         </span>
                       </div>
                       {room.meeting_link && (
@@ -352,12 +399,14 @@ export default function Dashboard() {
                     <Button 
                       onClick={() => handleJoinRoom(room.id)}
                       disabled={isJoining === room.id}
+                      variant={isExpert ? 'default' : 'default'}
                     >
                       {isJoining === room.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <>
-                          Join <ChevronRight className="ml-1 h-4 w-4" />
+                          {isExpert ? 'Enter as Moderator' : isAdmin ? 'View Session' : 'Join'}
+                          <ChevronRight className="ml-1 h-4 w-4" />
                         </>
                       )}
                     </Button>
@@ -370,21 +419,25 @@ export default function Dashboard() {
               <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
               <p className="text-lg font-medium text-foreground mb-1">No active sessions</p>
               <p className="text-sm text-muted-foreground">
-                {isExpert 
-                  ? 'Create a new session to get started'
-                  : 'Check back soon or ask an expert to create a session'}
+                {isAdmin 
+                  ? 'Click "Schedule Session" to create a new discussion'
+                  : isExpert
+                  ? 'No sessions available to moderate. Check back soon.'
+                  : 'Check back soon or wait for an admin to schedule a session'}
               </p>
             </div>
           )}
         </section>
       </main>
 
-      {/* Create Session Modal */}
-      <CreateSessionModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onSubmit={handleCreateSession}
-      />
+      {/* Create Session Modal - Only for Admins */}
+      {isAdmin && (
+        <CreateSessionModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreateSession}
+        />
+      )}
     </div>
   );
 }

@@ -1,19 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, AppRole } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { Users, GraduationCap, Briefcase, MessageSquare, Loader2 } from 'lucide-react';
+import { Users, GraduationCap, Briefcase, MessageSquare, Loader2, Shield } from 'lucide-react';
 import { z } from 'zod';
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   name: z.string().min(2, 'Name must be at least 2 characters').optional(),
-  role: z.enum(['student', 'expert']).optional()
+  role: z.enum(['student', 'expert', 'admin']).optional()
 });
 
 export default function Auth() {
@@ -21,7 +21,7 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'student' | 'expert'>('student');
+  const [role, setRole] = useState<AppRole>('student');
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -115,6 +115,12 @@ export default function Auth() {
       </div>
     );
   }
+
+  const roleOptions = [
+    { value: 'student', label: 'Student', icon: GraduationCap, color: 'text-primary', description: 'Join sessions to learn' },
+    { value: 'expert', label: 'Expert', icon: Briefcase, color: 'text-warning', description: 'Evaluate participants' },
+    { value: 'admin', label: 'Admin', icon: Shield, color: 'text-success', description: 'Organize sessions' },
+  ] as const;
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -223,37 +229,25 @@ export default function Auth() {
                 <Label>I am a</Label>
                 <RadioGroup
                   value={role}
-                  onValueChange={(value) => setRole(value as 'student' | 'expert')}
-                  className="grid grid-cols-2 gap-4"
+                  onValueChange={(value) => setRole(value as AppRole)}
+                  className="grid grid-cols-3 gap-3"
                 >
-                  <Label
-                    htmlFor="student"
-                    className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                      role === 'student'
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50'
-                    }`}
-                  >
-                    <RadioGroupItem value="student" id="student" />
-                    <div className="flex items-center gap-2">
-                      <GraduationCap className="w-5 h-5 text-primary" />
-                      <span className="font-medium">Student</span>
-                    </div>
-                  </Label>
-                  <Label
-                    htmlFor="expert"
-                    className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                      role === 'expert'
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50'
-                    }`}
-                  >
-                    <RadioGroupItem value="expert" id="expert" />
-                    <div className="flex items-center gap-2">
-                      <Briefcase className="w-5 h-5 text-warning" />
-                      <span className="font-medium">Expert</span>
-                    </div>
-                  </Label>
+                  {roleOptions.map((option) => (
+                    <Label
+                      key={option.value}
+                      htmlFor={option.value}
+                      className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 cursor-pointer transition-all text-center ${
+                        role === option.value
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-primary/50'
+                      }`}
+                    >
+                      <RadioGroupItem value={option.value} id={option.value} className="sr-only" />
+                      <option.icon className={`w-5 h-5 ${option.color}`} />
+                      <span className="font-medium text-sm">{option.label}</span>
+                      <span className="text-xs text-muted-foreground">{option.description}</span>
+                    </Label>
+                  ))}
                 </RadioGroup>
               </div>
             )}
