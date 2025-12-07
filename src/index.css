@@ -1,126 +1,82 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-
 @layer base {
   :root {
-    /* Light theme - Clean dashboard */
-    --background: 0 0% 98%;
-    --foreground: 222 47% 11%;
+    /* --- BRANDING: PrepLyt Premium Dark Theme --- */
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    /* 1. Main Background: Your requested Navy */
+    --background: 209 45% 14%; /* #132332 */
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    /* 2. Text: Soft White (Pure white can be too harsh) */
+    --foreground: 210 40% 98%;
 
-    /* Primary - Indigo */
-    --primary: 239 84% 67%;
-    --primary-foreground: 0 0% 100%;
+    /* 3. Primary: PrepLyt Teal */
+    --primary: 173 80% 40%;
+    --primary-foreground: 210 40% 98%;
 
-    /* Secondary */
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 222 47% 11%;
+    /* 4. Cards & Surfaces: Slightly lighter Navy for depth */
+    --card: 209 45% 17%;
+    --card-foreground: 210 40% 98%;
 
-    --muted: 240 5% 96%;
-    --muted-foreground: 215 16% 47%;
+    --popover: 209 45% 17%;
+    --popover-foreground: 210 40% 98%;
 
-    /* Accent - Indigo light */
-    --accent: 239 84% 95%;
-    --accent-foreground: 239 84% 47%;
+    /* 5. Secondary Elements: Dark Slate (vs previous White) */
+    --secondary: 215 25% 20%;
+    --secondary-foreground: 210 40% 98%;
 
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
+    /* 6. Muted Elements: Subtle background for inactive items */
+    --muted: 215 25% 20%;
+    --muted-foreground: 215 20% 65%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 239 84% 67%;
+    /* 7. Accents: Hover states */
+    --accent: 215 25% 25%;
+    --accent-foreground: 210 40% 98%;
+
+    /* 8. Destructive (Error states) */
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* 9. Borders: Subtle dark lines, not bright grey */
+    --border: 215 25% 25%;
+    --input: 215 25% 25%;
+
+    /* 10. Ring: Matches Primary Teal */
+    --ring: 173 80% 40%;
 
     --radius: 0.75rem;
-
-    /* Custom colors */
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
-    --star: 45 93% 47%;
-
-    /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(239 84% 67%) 0%, hsl(263 70% 50%) 100%);
-    --gradient-success: linear-gradient(135deg, hsl(142 76% 36%) 0%, hsl(160 84% 39%) 100%);
-    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(240 5% 98%) 100%);
-
-    /* Shadows */
-    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.05);
-    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.1), 0 2px 4px -2px hsl(0 0% 0% / 0.1);
-    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.1), 0 4px 6px -4px hsl(0 0% 0% / 0.1);
-    --shadow-glow: 0 0 40px hsl(239 84% 67% / 0.15);
-
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
-    /* Dark theme - Meeting room */
-    --background: 222 47% 6%;
+    /* Mirroring root since the app is natively dark now */
+    --background: 209 45% 14%;
     --foreground: 210 40% 98%;
 
-    --card: 222 47% 8%;
+    --primary: 173 80% 40%;
+    --primary-foreground: 210 40% 98%;
+
+    --card: 209 45% 17%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 222 47% 8%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 239 84% 67%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 217 33% 17%;
+    --secondary: 215 25% 20%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 217 33% 17%;
+    --muted: 215 25% 20%;
     --muted-foreground: 215 20% 65%;
 
-    --accent: 239 84% 20%;
-    --accent-foreground: 239 84% 80%;
+    --accent: 215 25% 25%;
+    --accent-foreground: 210 40% 98%;
 
-    --destructive: 0 63% 31%;
+    --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 239 84% 67%;
-
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 0%;
-    --star: 45 93% 47%;
-
-    --gradient-primary: linear-gradient(135deg, hsl(239 84% 67%) 0%, hsl(263 70% 50%) 100%);
-    --gradient-success: linear-gradient(135deg, hsl(142 76% 36%) 0%, hsl(160 84% 39%) 100%);
-    --gradient-card: linear-gradient(180deg, hsl(222 47% 10%) 0%, hsl(222 47% 8%) 100%);
-
-    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.3);
-    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.4), 0 2px 4px -2px hsl(0 0% 0% / 0.3);
-    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.4), 0 4px 6px -4px hsl(0 0% 0% / 0.3);
-    --shadow-glow: 0 0 40px hsl(239 84% 67% / 0.25);
-
-    --sidebar-background: 222 47% 6%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 217 33% 17%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 217 33% 17%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --border: 215 25% 25%;
+    --input: 215 25% 25%;
+    --ring: 173 80% 40%;
   }
 }
 
@@ -128,101 +84,12 @@
   * {
     @apply border-border;
   }
-
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
 
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-display font-bold tracking-tight;
-  }
-}
-
-@layer components {
-  .glass-card {
-    @apply bg-card/80 backdrop-blur-xl border border-border/50 rounded-xl shadow-lg;
-  }
-
-  .gradient-text {
-    @apply bg-clip-text text-transparent;
-    background-image: var(--gradient-primary);
-  }
-
-  .glow-effect {
-    box-shadow: var(--shadow-glow);
-  }
-
-  .domain-card {
-    @apply relative overflow-hidden rounded-2xl p-6 cursor-pointer transition-all duration-300;
-    @apply hover:scale-[1.02] hover:shadow-xl;
-  }
-
-  .domain-card::before {
-    content: '';
-    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
-    background: var(--gradient-primary);
-  }
-
-  .domain-card:hover::before {
-    @apply opacity-10;
-  }
-
-  .stat-card {
-    @apply bg-card rounded-xl p-4 border border-border/50 shadow-sm;
-    @apply hover:shadow-md transition-shadow duration-200;
-  }
-
-  .meeting-sidebar {
-    @apply bg-card/95 backdrop-blur-xl border-l border-border/30;
-  }
-}
-
-@layer utilities {
-  .animate-fade-in {
-    animation: fadeIn 0.5s ease-out forwards;
-  }
-
-  .animate-slide-up {
-    animation: slideUp 0.5s ease-out forwards;
-  }
-
-  .animate-scale-in {
-    animation: scaleIn 0.3s ease-out forwards;
-  }
-
-  .animate-pulse-soft {
-    animation: pulseSoft 2s ease-in-out infinite;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  @keyframes slideUp {
-    from { 
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to { 
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes scaleIn {
-    from { 
-      opacity: 0;
-      transform: scale(0.95);
-    }
-    to { 
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-
-  @keyframes pulseSoft {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+  /* BRANDING: Selection glow matches Teal branding */
+  ::selection {
+    @apply bg-teal-500/30 text-teal-100;
   }
 }

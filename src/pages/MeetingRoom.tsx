@@ -1,23 +1,24 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
-import { RatingModal } from '@/components/RatingModal';
-import { 
-  ArrowLeft, 
-  Users, 
-  Star, 
+import { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { RatingModal } from "@/components/RatingModal";
+import {
+  ArrowLeft,
+  Users,
+  Star,
   Loader2,
   MessageSquare,
-  Crown,
-  GraduationCap,
   Briefcase,
   ExternalLink,
+  Circle,
+  Shield,
+  Video,
+  GraduationCap,
   Clock,
-  Circle
-} from 'lucide-react';
+} from "lucide-react";
 
 interface Participant {
   id: string;
@@ -45,12 +46,28 @@ interface Room {
   created_at: string;
 }
 
+// Added Profile interface to replace 'any'
+interface Profile {
+  id: string;
+  name: string;
+  role: string;
+  points: number;
+  // Add other profile fields if necessary
+}
+
 export default function MeetingRoom() {
-  const { roomId } = useParams();
-  const { profile, loading, refreshProfile } = useAuth();
+  const { roomId } = useParams<{ roomId: string }>();
+  // 1. Get 'user' directly to verify auth status, ignoring broken 'profile' context if needed
+  const { profile: contextProfile, user, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+
+  // Local state for profile (Self-healing)
+  // FIX: Replaced <any> with <Profile | null>
+  const [activeProfile, setActiveProfile] = useState<Profile | null>(
+    contextProfile as Profile | null
+  );
+
   const [room, setRoom] = useState<Room | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [feedbackFeed, setFeedbackFeed] = useState<Feedback[]>([]);
@@ -58,151 +75,112 @@ export default function MeetingRoom() {
   const [ratingTarget, setRatingTarget] = useState<Participant | null>(null);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
 
+  // 2. Sync Context Profile if available
   useEffect(() => {
-    if (!loading && !profile) {
-      navigate('/auth');
-    }
-  }, [profile, loading, navigate]);
+    if (contextProfile) setActiveProfile(contextProfile as Profile);
+  }, [contextProfile]);
 
-  // Fetch room data
+  // 3. ROBUST AUTH CHECK: Only redirect if NO USER (Auth) is found.
+  useEffect(() => {
+    if (!loading && !user) {
+      console.log("No authenticated user found. Redirecting to Auth.");
+      navigate("/auth");
+    }
+  }, [user, loading, navigate]);
+
+  // 4. SELF-HEALING: Fetch Profile Locally if Context Failed
+  useEffect(() => {
+    const loadProfileLocally = async () => {
+      if (user && !activeProfile) {
+        console.log("Context profile missing. Fetching locally...");
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id) // Correct column is 'id'
+          .single();
+
+        if (data) {
+          console.log("Local profile fetch success.");
+          // Cast data to Profile type since Supabase returns general objects
+          setActiveProfile(data as Profile);
+        } else {
+          console.error("Local profile fetch failed:", error);
+        }
+      }
+    };
+    loadProfileLocally();
+  }, [user, activeProfile]);
+
+  // 5. Fetch Room Data
   useEffect(() => {
     if (!roomId) return;
 
     const fetchRoom = async () => {
-      const { data, error } = await supabase
-        .from('rooms')
-        .select('*')
-        .eq('id', roomId)
-        .single();
+      try {
+        const { data, error } = await supabase
+          .from("rooms")
+          .select("*")
+          .eq("id", roomId)
+          .single();
 
-      if (error || !data) {
-        toast({
-          title: 'Room not found',
-          description: 'The session does not exist.',
-          variant: 'destructive'
-        });
-        navigate('/dashboard');
-        return;
-      }
+        if (error || !data) {
+          console.error("Room fetch error:", error);
+          toast({
+            title: "Room not found",
+            description: "The session does not exist or has been deleted.",
+            variant: "destructive",
+          });
+          navigate("/dashboard");
+          return;
+        }
 
-      setRoom(data as unknown as Room);
-      setParticipants((data.participants as unknown as Participant[]) || []);
-      setIsLoadingRoom(false);
+        setRoom(data as unknown as Room);
+        setParticipants((data.participants as unknown as Participant[]) || []);
 
-      // Update status to live if waiting
-      if (data.status === 'waiting') {
-        await supabase
-          .from('rooms')
-          .update({ status: 'live' })
-          .eq('id', roomId);
+        // Auto-update status if waiting
+        if (data.status === "waiting") {
+          await supabase
+            .from("rooms")
+            .update({ status: "live" })
+            .eq("id", roomId);
+        }
+      } catch (err) {
+        console.error("Unexpected error fetching room:", err);
+      } finally {
+        setIsLoadingRoom(false);
       }
     };
 
     fetchRoom();
   }, [roomId, navigate, toast]);
 
-  // Fetch feedback for this room
-  useEffect(() => {
-    if (!roomId) return;
-
-    const fetchFeedback = async () => {
-      const { data } = await supabase
-        .from('feedback')
-        .select('id, rating, comment, created_at, student_id, expert_id')
-        .eq('room_id', roomId)
-        .order('created_at', { ascending: false });
-
-      if (data) {
-        // Fetch names for feedback
-        const studentIds = [...new Set(data.map(f => f.student_id).filter(Boolean))];
-        const expertIds = [...new Set(data.map(f => f.expert_id).filter(Boolean))];
-        
-        const [{ data: students }, { data: experts }] = await Promise.all([
-          supabase.from('profiles').select('id, name').in('id', studentIds),
-          supabase.from('profiles').select('id, name').in('id', expertIds)
-        ]);
-
-        const studentsMap = new Map(students?.map(s => [s.id, s.name]) || []);
-        const expertsMap = new Map(experts?.map(e => [e.id, e.name]) || []);
-
-        const feedbackWithNames = data.map(f => ({
-          ...f,
-          student: f.student_id ? { name: studentsMap.get(f.student_id) || 'Unknown' } : null,
-          expert: f.expert_id ? { name: expertsMap.get(f.expert_id) || 'Unknown' } : null
-        }));
-
-        setFeedbackFeed(feedbackWithNames);
-      }
-    };
-
-    fetchFeedback();
-  }, [roomId]);
-
-  // Subscribe to room updates
+  // 6. Realtime Room Updates
   useEffect(() => {
     if (!roomId) return;
 
     const channel = supabase
       .channel(`room-${roomId}`)
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'rooms',
-          filter: `id=eq.${roomId}`
+          event: "UPDATE",
+          schema: "public",
+          table: "rooms",
+          filter: `id=eq.${roomId}`,
         },
         (payload) => {
           const updatedRoom = payload.new as Room;
           setRoom(updatedRoom);
-          setParticipants((updatedRoom.participants as Participant[]) || []);
-        }
-      )
-      .subscribe();
+          setParticipants(
+            (updatedRoom.participants as unknown as Participant[]) || []
+          );
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [roomId]);
-
-  // Subscribe to feedback for real-time notifications and feed updates
-  useEffect(() => {
-    if (!profile || !roomId) return;
-
-    const channel = supabase
-      .channel('feedback-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'feedback',
-          filter: `room_id=eq.${roomId}`
-        },
-        async (payload) => {
-          const feedback = payload.new as { id: string; rating: number; comment: string; student_id: string; expert_id: string; created_at: string };
-          
-          // Fetch names
-          const [{ data: student }, { data: expert }] = await Promise.all([
-            supabase.from('profiles').select('name').eq('id', feedback.student_id).single(),
-            supabase.from('profiles').select('name').eq('id', feedback.expert_id).single()
-          ]);
-
-          const newFeedback: Feedback = {
-            ...feedback,
-            student: student ? { name: student.name } : null,
-            expert: expert ? { name: expert.name } : null
-          };
-
-          setFeedbackFeed(prev => [newFeedback, ...prev]);
-
-          // Show toast for the student who received the rating
-          if (feedback.student_id === profile.id) {
+          if (updatedRoom.status === "completed") {
             toast({
-              title: `You received ${feedback.rating} stars!`,
-              description: feedback.comment || 'Keep up the great work!',
+              title: "Session Ended",
+              description: "The admin has closed this session.",
             });
-            refreshProfile();
+            navigate("/dashboard");
           }
         }
       )
@@ -211,138 +189,111 @@ export default function MeetingRoom() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile, roomId, toast, refreshProfile]);
+  }, [roomId, navigate, toast]);
 
-  const handleLeave = async () => {
-    if (profile && room) {
-      const updatedParticipants = participants.filter(p => p.id !== profile.id);
-      await supabase
-        .from('rooms')
-        .update({ 
-          participants: JSON.parse(JSON.stringify(updatedParticipants)),
-          status: updatedParticipants.length === 0 ? 'ended' : room.status
-        })
-        .eq('id', roomId);
-    }
-
-    navigate('/dashboard');
-  };
-
+  // 7. Logic Functions
   const handleOpenMeetingLink = async () => {
-    if (!room?.meeting_link || !profile) return;
+    if (!room?.meeting_link || !activeProfile) return;
 
-    // Check if user is already in participants
-    const alreadyJoined = participants.some(p => p.id === profile.id);
-    
+    const alreadyJoined = participants.some((p) => p.id === activeProfile.id);
+
     if (alreadyJoined) {
-      // Already checked in, just open the link
-      window.open(room.meeting_link, '_blank');
+      window.open(room.meeting_link, "_blank");
       return;
     }
 
     setIsCheckingIn(true);
-    
+
     try {
-      // Fetch the latest participants to avoid race conditions
-      const { data: currentRoom, error: fetchError } = await supabase
-        .from('rooms')
-        .select('participants')
-        .eq('id', roomId)
+      const { data: currentRoom } = await supabase
+        .from("rooms")
+        .select("participants")
+        .eq("id", roomId)
         .single();
 
-      if (fetchError) throw fetchError;
+      const currentParticipants =
+        (currentRoom?.participants as unknown as Participant[]) || [];
 
-      const currentParticipants = (currentRoom?.participants as unknown as Participant[]) || [];
-      
-      // Check again if already in participants (in case of concurrent joins)
-      if (!currentParticipants.some(p => p.id === profile.id)) {
-        const newParticipant: Participant = {
-          id: profile.id,
-          name: profile.name,
-          role: profile.role
+      if (!currentParticipants.some((p) => p.id === activeProfile.id)) {
+        const newParticipant = {
+          id: activeProfile.id,
+          name: activeProfile.name,
+          role: activeProfile.role,
         };
-
         const updatedParticipants = [...currentParticipants, newParticipant];
 
-        const { error: updateError } = await supabase
-          .from('rooms')
-          .update({ participants: JSON.parse(JSON.stringify(updatedParticipants)) })
-          .eq('id', roomId);
-
-        if (updateError) throw updateError;
+        await supabase
+          .from("rooms")
+          .update({
+            participants: JSON.parse(JSON.stringify(updatedParticipants)),
+          })
+          .eq("id", roomId);
       }
 
-      // Success - open the meeting link
-      window.open(room.meeting_link, '_blank');
-      
+      window.open(room.meeting_link, "_blank");
       toast({
-        title: 'Checked in!',
-        description: 'You are now visible in the session roster.',
+        title: "Checked in!",
+        description: "You are now visible in the roster.",
       });
     } catch (error) {
-      console.error('Error checking in:', error);
+      console.error("Check-in error:", error);
       toast({
-        title: 'Check-in failed',
-        description: 'Could not join the session. Please try again.',
-        variant: 'destructive'
+        title: "Check-in failed",
+        description: "Could not join session.",
+        variant: "destructive",
       });
     } finally {
       setIsCheckingIn(false);
     }
   };
 
-  const handleRateStudent = (participant: Participant) => {
-    setRatingTarget(participant);
-  };
-
   const handleSubmitRating = async (rating: number, comment: string) => {
-    if (!profile || !ratingTarget || !roomId) return;
+    if (!activeProfile || !ratingTarget || !roomId) return;
 
     try {
-      await supabase
-        .from('feedback')
-        .insert({
-          room_id: roomId,
-          student_id: ratingTarget.id,
-          expert_id: profile.id,
-          rating,
-          comment
-        });
+      await supabase.from("feedback").insert({
+        room_id: roomId,
+        student_id: ratingTarget.id,
+        expert_id: activeProfile.id,
+        rating,
+        comment,
+      });
 
-      // Update student points
-      const { data: studentProfile } = await supabase
-        .from('profiles')
-        .select('points')
-        .eq('id', ratingTarget.id)
+      // Update points
+      const { data: studentData } = await supabase
+        .from("profiles")
+        .select("points")
+        .eq("id", ratingTarget.id)
         .single();
-
-      if (studentProfile) {
+      if (studentData) {
         await supabase
-          .from('profiles')
-          .update({ points: studentProfile.points + rating * 10 })
-          .eq('id', ratingTarget.id);
+          .from("profiles")
+          .update({ points: studentData.points + rating * 10 })
+          .eq("id", ratingTarget.id);
       }
 
       toast({
-        title: 'Rating submitted',
-        description: `You rated ${ratingTarget.name} ${rating} stars.`
+        title: "Rating submitted",
+        description: `Rated ${ratingTarget.name} ${rating} stars.`,
       });
-
       setRatingTarget(null);
     } catch (error) {
-      console.error('Error submitting rating:', error);
       toast({
-        title: 'Error',
-        description: 'Failed to submit rating. Please try again.',
-        variant: 'destructive'
+        title: "Error",
+        description: "Failed to submit rating.",
+        variant: "destructive",
       });
     }
   };
 
   const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(dateString).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
+  // Render Loading
   if (loading || isLoadingRoom) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -351,249 +302,172 @@ export default function MeetingRoom() {
     );
   }
 
-  if (!room || !profile) return null;
+  // If Auth user exists but profile is still fetching
+  if (user && !activeProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mr-2" />
+        <span className="text-muted-foreground">Loading Profile...</span>
+      </div>
+    );
+  }
 
-  const isExpert = profile.role === 'expert';
-  const students = participants.filter(p => p.role === 'student');
-  const experts = participants.filter(p => p.role === 'expert');
+  if (!room || !activeProfile) return null;
+
+  const isExpert = activeProfile.role === "expert";
+  const isAdmin = activeProfile.role === "admin";
+  const canRate = isExpert || isAdmin;
+
+  // Filter participants
+  const students = participants.filter((p) => p.role === "student");
+  const experts = participants.filter(
+    (p) => p.role === "expert" || p.role === "admin"
+  );
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={handleLeave}>
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-                  <MessageSquare className="w-5 h-5 text-primary-foreground" />
-                </div>
-                <div>
-                  <h1 className="font-semibold text-foreground">{room.topic}</h1>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="capitalize">{room.domain}</span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1">
-                      <Circle className={`w-2 h-2 ${room.status === 'live' ? 'fill-success text-success' : 'fill-warning text-warning'}`} />
-                      {room.status === 'live' ? 'Live' : 'Waiting'}
-                    </span>
-                  </div>
-                </div>
-              </div>
+    <div className="min-h-screen bg-background p-4 md:p-8">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header Navigation */}
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/dashboard")}
+            title="Back to Dashboard"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">{room.topic}</h1>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="capitalize">{room.domain}</span>
+              <span>•</span>
+              <span className="flex items-center gap-1">
+                <Circle
+                  className={`w-2 h-2 ${
+                    room.status === "live"
+                      ? "fill-green-500 text-green-500"
+                      : "fill-yellow-500 text-yellow-500"
+                  }`}
+                />
+                {room.status === "live" ? "Live Session" : "Waiting Room"}
+              </span>
             </div>
-            
-            {room.meeting_link && (
-              <Button onClick={handleOpenMeetingLink} className="gap-2" disabled={isCheckingIn}>
-                {isCheckingIn ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Checking in...
-                  </>
-                ) : (
-                  <>
-                    <ExternalLink className="h-4 w-4" />
-                    Join Video Call
-                  </>
-                )}
-              </Button>
-            )}
           </div>
         </div>
-      </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Meeting Link Banner */}
-        {room.meeting_link && (
-          <div className="mb-6 p-4 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between">
-            <div>
-              <p className="font-medium text-foreground">Video Call Ready</p>
-              <p className="text-sm text-muted-foreground">Click the button to join the external video call in a new tab</p>
-            </div>
-            <Button size="lg" onClick={handleOpenMeetingLink} className="gap-2" disabled={isCheckingIn}>
-              {isCheckingIn ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Checking in...
-                </>
-              ) : (
-                <>
-                  <ExternalLink className="h-5 w-5" />
-                  Open Meeting Link
-                </>
-              )}
-            </Button>
-          </div>
-        )}
-
-        <div className="grid lg:grid-cols-2 gap-6">
-          {/* Left Column - Roster */}
-          <div className="space-y-6">
-            {/* Students Roster */}
-            <div className="bg-card border border-border rounded-xl overflow-hidden">
-              <div className="p-4 border-b border-border bg-muted/30">
-                <h2 className="font-semibold text-foreground flex items-center gap-2">
-                  <GraduationCap className="w-5 h-5 text-primary" />
-                  Students ({students.length})
-                </h2>
-              </div>
-              <div className="p-4 space-y-2">
-                {students.length > 0 ? (
-                  students.map((participant) => (
-                    <div
-                      key={participant.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                          <GraduationCap className="w-5 h-5 text-primary" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-foreground flex items-center gap-2">
-                            {participant.name}
-                            {participant.id === profile.id && (
-                              <span className="text-xs text-primary">(You)</span>
-                            )}
-                          </p>
-                          <p className="text-xs text-muted-foreground">Student</p>
-                        </div>
-                      </div>
-                      
-                      {isExpert && participant.id !== profile.id && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-star hover:text-star hover:bg-star/10 gap-1"
-                          onClick={() => handleRateStudent(participant)}
-                        >
-                          <Star className="h-4 w-4" />
-                          Rate
-                        </Button>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8">
-                    <GraduationCap className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">No students have joined yet</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Experts Roster */}
-            <div className="bg-card border border-border rounded-xl overflow-hidden">
-              <div className="p-4 border-b border-border bg-muted/30">
-                <h2 className="font-semibold text-foreground flex items-center gap-2">
-                  <Briefcase className="w-5 h-5 text-warning" />
-                  Experts ({experts.length})
-                </h2>
-              </div>
-              <div className="p-4 space-y-2">
-                {experts.length > 0 ? (
-                  experts.map((participant) => (
-                    <div
-                      key={participant.id}
-                      className="flex items-center gap-3 p-3 rounded-lg bg-muted/30"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-warning/20 flex items-center justify-center">
-                        <Briefcase className="w-5 h-5 text-warning" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground flex items-center gap-2">
-                          {participant.name}
-                          {room.host_id === participant.id && (
-                            <Crown className="w-4 h-4 text-star" />
-                          )}
-                          {participant.id === profile.id && (
-                            <span className="text-xs text-primary">(You)</span>
-                          )}
-                        </p>
-                        <p className="text-xs text-muted-foreground">Expert</p>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8">
-                    <Briefcase className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">No experts have joined yet</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column - Feedback Feed */}
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-border bg-muted/30">
-              <h2 className="font-semibold text-foreground flex items-center gap-2">
-                <Star className="w-5 h-5 text-star" />
-                Live Feedback Feed
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* LEFT: Main Action Card */}
+          <div className="lg:col-span-2 bg-card border border-border rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-slate-900 p-8 text-center">
+              <Video className="w-12 h-12 mx-auto mb-4 text-teal-400" />
+              <h2 className="text-2xl font-bold text-white mb-2">
+                Join the Discussion
               </h2>
-            </div>
-            <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto">
-              {feedbackFeed.length > 0 ? (
-                feedbackFeed.map((feedback) => (
-                  <div
-                    key={feedback.id}
-                    className="p-4 rounded-lg bg-muted/30 border border-border/50"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <p className="font-medium text-foreground">
-                          {feedback.student?.name || 'Unknown Student'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Rated by {feedback.expert?.name || 'Unknown Expert'}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {[...Array(5)].map((_, i) => (
-                          <Star
-                            key={i}
-                            className={`w-4 h-4 ${
-                              i < feedback.rating
-                                ? 'fill-star text-star'
-                                : 'text-muted-foreground'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    {feedback.comment && (
-                      <p className="text-sm text-muted-foreground">{feedback.comment}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {formatTime(feedback.created_at)}
-                    </p>
-                  </div>
-                ))
+              <p className="text-slate-400 mb-6 max-w-md mx-auto text-sm">
+                The video call happens on an external platform (Google
+                Meet/Zoom). Keep this tab open to see the roster and receive
+                ratings.
+              </p>
+              {room.meeting_link ? (
+                <Button
+                  size="lg"
+                  onClick={handleOpenMeetingLink}
+                  disabled={isCheckingIn}
+                  className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-8"
+                >
+                  {isCheckingIn ? (
+                    <Loader2 className="animate-spin mr-2" />
+                  ) : (
+                    <ExternalLink className="mr-2 h-5 w-5" />
+                  )}
+                  {isCheckingIn ? "Checking in..." : "Open Meeting Link"}
+                </Button>
               ) : (
-                <div className="text-center py-12">
-                  <Star className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="font-medium text-foreground mb-1">No feedback yet</p>
-                  <p className="text-sm text-muted-foreground">
-                    {isExpert 
-                      ? 'Click "Rate" next to a student to give feedback'
-                      : 'Feedback from experts will appear here in real-time'}
-                  </p>
+                <Button disabled variant="secondary">
+                  No Link Available
+                </Button>
+              )}
+            </div>
+
+            <div className="p-6 bg-card">
+              <div className="bg-blue-50/50 border border-blue-100 dark:bg-blue-900/20 dark:border-blue-800 rounded-lg p-4">
+                <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2 flex items-center gap-2">
+                  <Shield className="w-4 h-4" /> Instructions
+                </h3>
+                <ul className="list-disc list-inside text-sm text-blue-800 dark:text-blue-400 space-y-1">
+                  <li>Please keep your camera ON during the session.</li>
+                  <li>Mute your microphone when you are not speaking.</li>
+                  <li>Experts will rate your performance in real-time.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: Participants Roster */}
+          <div className="bg-card border border-border rounded-xl shadow-sm h-fit">
+            <div className="p-4 border-b border-border">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Users className="w-5 h-5 text-primary" />
+                Participants ({participants.length})
+              </h3>
+            </div>
+            <div className="p-4 space-y-3 max-h-[500px] overflow-y-auto">
+              {participants.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold
+                      ${
+                        p.role === "expert"
+                          ? "bg-purple-100 text-purple-700"
+                          : p.role === "admin"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-teal-100 text-teal-700"
+                      }`}
+                    >
+                      {p.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{p.name}</p>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        {p.role}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Rating Button */}
+                  {canRate && p.role === "student" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground hover:text-yellow-500"
+                      onClick={() => setRatingTarget(p)}
+                      title={`Rate ${p.name}`}
+                    >
+                      <Star className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {participants.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  Waiting for participants...
                 </div>
               )}
             </div>
           </div>
         </div>
-      </main>
+      </div>
 
-      {/* Rating Modal */}
       <RatingModal
         isOpen={!!ratingTarget}
         onClose={() => setRatingTarget(null)}
         onSubmit={handleSubmitRating}
-        studentName={ratingTarget?.name || ''}
+        studentName={ratingTarget?.name || ""}
       />
     </div>
   );
