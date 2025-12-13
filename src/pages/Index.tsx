@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
   Video,
@@ -10,18 +11,40 @@ import {
   ArrowRight,
   ChevronRight,
   Loader2,
+  CheckCircle,
+  Quote,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
+
+interface FeaturedExpert {
+  id: string;
+  name: string;
+  role: string;
+  image_url: string;
+}
 
 export default function Index() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const [experts, setExperts] = useState<FeaturedExpert[]>([]);
 
   useEffect(() => {
-    if (!loading && user) {
-      navigate("/dashboard");
-    }
+    if (!loading && user) navigate("/dashboard");
   }, [user, loading, navigate]);
+
+  // Fetch Experts for "Hall of Fame"
+  useEffect(() => {
+    const fetchExperts = async () => {
+      // Cast to any to bypass strict type check for the new table
+      const { data } = await (supabase
+        .from("featured_experts" as any)
+        .select("*")
+        .limit(6) as any);
+
+      if (data) setExperts(data as FeaturedExpert[]);
+    };
+    fetchExperts();
+  }, []);
 
   if (loading) {
     return (
@@ -33,11 +56,10 @@ export default function Index() {
 
   return (
     <div className="min-h-screen bg-background overflow-hidden">
-      {/* Gradient background effects */}
+      {/* Background Gradient */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/20 rounded-full blur-3xl" />
         <div className="absolute top-1/2 -left-40 w-80 h-80 bg-primary/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 right-1/3 w-80 h-80 bg-accent/20 rounded-full blur-3xl" />
       </div>
 
       {/* Header */}
@@ -65,39 +87,27 @@ export default function Index() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative z-10 pt-20 pb-32 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-8 animate-fade-in">
-            <Zap className="w-4 h-4" />
-            <span>Practice GDs with real-time expert feedback</span>
+      <section className="relative z-10 pt-20 pb-20 px-4 sm:px-6 lg:px-8 text-center">
+        <div className="max-w-4xl mx-auto">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-8 border border-primary/20">
+            <Zap className="w-4 h-4" />{" "}
+            <span>Live GDs with Real Industry Mentors</span>
           </div>
-
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-foreground mb-6 animate-slide-up">
-            Master the Art of{" "}
-            <span className="gradient-text">Group Discussions</span>
+          <h1 className="text-4xl sm:text-6xl font-bold text-foreground mb-6 leading-tight">
+            Don't Just Prepare. <br />{" "}
+            <span className="gradient-text">Perform.</span>
           </h1>
-
-          <p
-            className="text-lg sm:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto animate-slide-up"
-            style={{ animationDelay: "0.1s" }}
-          >
-            Join live video discussions with peers, get rated by industry
-            experts, and level up your communication skills through gamified
-            learning.
+          <p className="text-lg text-muted-foreground mb-10 max-w-2xl mx-auto">
+            The first platform to move beyond "Tips & Tricks". Join live
+            simulation rounds, face actual corporate panelists, and get a
+            quantifiable score on your confidence.
           </p>
-
-          <div
-            className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-up"
-            style={{ animationDelay: "0.2s" }}
-          >
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link to="/auth">
-              <Button size="lg" className="h-14 px-8 text-lg glow-effect">
-                Start Practicing
-                <ArrowRight className="ml-2 h-5 w-5" />
+              <Button size="lg" className="h-14 px-8 text-lg glow-effect gap-2">
+                Start Practicing <ArrowRight className="h-5 w-5" />
               </Button>
             </Link>
-
-            {/* UPDATED: Added query param for expert role */}
             <Link to="/auth?role=expert">
               <Button size="lg" variant="outline" className="h-14 px-8 text-lg">
                 Join as Expert
@@ -107,159 +117,142 @@ export default function Index() {
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8 bg-card/50">
+      {/* USPs Grid */}
+      <section className="py-20 px-4 bg-card/50 border-y border-border">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
-              Everything you need to excel
-            </h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              A complete platform designed to help you master group discussions
-            </p>
-          </div>
-
+          <h2 className="text-3xl font-bold text-center mb-12">
+            Why PrepLyt Wins
+          </h2>
           <div className="grid md:grid-cols-3 gap-8">
-            <div
-              className="group p-8 rounded-2xl bg-card border border-border hover:border-primary/50 hover:shadow-lg transition-all animate-slide-up"
-              style={{ animationDelay: "0.1s" }}
-            >
+            <div className="p-8 rounded-2xl bg-background border border-border hover:border-primary/50 transition-all group">
               <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                 <Video className="w-7 h-7 text-primary" />
               </div>
-              <h3 className="text-xl font-bold text-foreground mb-3">
-                Live Video Discussions
-              </h3>
+              <h3 className="text-xl font-bold mb-3">Real-World Simulation</h3>
               <p className="text-muted-foreground">
-                Join real-time video calls with peers from around the world.
-                Practice on topics across Marketing, Tech, Finance, and more.
+                No recorded lectures. You speak, argue, and lead in a live video
+                environment with 10 peers.
               </p>
             </div>
-
-            <div
-              className="group p-8 rounded-2xl bg-card border border-border hover:border-primary/50 hover:shadow-lg transition-all animate-slide-up"
-              style={{ animationDelay: "0.2s" }}
-            >
+            <div className="p-8 rounded-2xl bg-background border border-border hover:border-primary/50 transition-all group">
               <div className="w-14 h-14 rounded-xl bg-star/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                 <Star className="w-7 h-7 text-star" />
               </div>
-              <h3 className="text-xl font-bold text-foreground mb-3">
-                Expert Ratings
-              </h3>
+              <h3 className="text-xl font-bold mb-3">Industry Validation</h3>
               <p className="text-muted-foreground">
-                Get real-time feedback from industry experts who rate your
-                performance and provide actionable insights.
+                Get rated by Product Managers, HRs, and Tech Leads from top
+                companies, not AI bots.
               </p>
             </div>
-
-            <div
-              className="group p-8 rounded-2xl bg-card border border-border hover:border-primary/50 hover:shadow-lg transition-all animate-slide-up"
-              style={{ animationDelay: "0.3s" }}
-            >
+            <div className="p-8 rounded-2xl bg-background border border-border hover:border-primary/50 transition-all group">
               <div className="w-14 h-14 rounded-xl bg-success/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                 <Trophy className="w-7 h-7 text-success" />
               </div>
-              <h3 className="text-xl font-bold text-foreground mb-3">
-                Gamified Learning
-              </h3>
+              <h3 className="text-xl font-bold mb-3">Quantifiable Growth</h3>
               <p className="text-muted-foreground">
-                Earn XP points, level up your profile, and track your progress
-                as you improve your discussion skills.
+                Track your "Employability Score". See your confidence XP grow
+                with every session.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* How it works */}
-      <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
+      {/* DYNAMIC: Our Experts */}
+      <section className="py-20 px-4">
+        <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
-              How it works
-            </h2>
+            <h2 className="text-3xl font-bold mb-4">Mentored by the Best</h2>
             <p className="text-muted-foreground text-lg">
-              Get started in three simple steps
+              Sessions conducted by professionals from top tier companies.
             </p>
           </div>
 
-          <div className="space-y-8">
-            {[
-              {
-                step: "01",
-                title: "Choose your domain",
-                description:
-                  "Select from Marketing, Technology, Finance, or Business topics that interest you.",
-              },
-              {
-                step: "02",
-                title: "Join a live discussion",
-                description:
-                  "Get matched with other students and join a video call with an auto-generated topic.",
-              },
-              {
-                step: "03",
-                title: "Get rated & improve",
-                description:
-                  "Receive instant feedback from experts, earn XP points, and track your progress.",
-              },
-            ].map((item, index) => (
-              <div
-                key={item.step}
-                className="flex items-start gap-6 animate-slide-up"
-                style={{ animationDelay: `${0.1 * (index + 1)}s` }}
-              >
-                <div className="flex-shrink-0 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-primary font-bold">{item.step}</span>
+          {experts.length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {experts.map((expert) => (
+                <div
+                  key={expert.id}
+                  className="group relative overflow-hidden rounded-xl aspect-[4/5] bg-muted"
+                >
+                  <img
+                    src={expert.image_url}
+                    alt={expert.name}
+                    className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-4">
+                    <p className="text-white font-bold">{expert.name}</p>
+                    <p className="text-primary text-xs font-medium uppercase tracking-wider">
+                      {expert.role}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold text-foreground mb-2">
-                    {item.title}
-                  </h3>
-                  <p className="text-muted-foreground">{item.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center p-12 border-2 border-dashed border-border rounded-xl">
+              <p className="text-muted-foreground">
+                Our expert panel is being updated. Join now to meet them live!
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="p-12 rounded-3xl bg-gradient-to-br from-primary/10 via-card to-accent/10 border border-border">
-            <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
-              Ready to master GDs?
-            </h2>
-            <p className="text-muted-foreground text-lg mb-8 max-w-xl mx-auto">
-              Join thousands of students who are improving their communication
-              skills every day.
-            </p>
-            <Link to="/auth">
-              <Button size="lg" className="h-14 px-8 text-lg glow-effect">
-                Get Started for Free
-                <ChevronRight className="ml-2 h-5 w-5" />
-              </Button>
-            </Link>
+      {/* Testimonials */}
+      <section className="py-20 px-4 bg-primary/5">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-12">
+            Student Stories
+          </h2>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-card p-6 rounded-xl border border-border shadow-sm">
+              <Quote className="w-8 h-8 text-primary/20 mb-4" />
+              <p className="text-foreground mb-6">
+                "I always froze during GDs. After 5 sessions on PrepLyt, I not
+                only spoke but led the discussion in my actual placement drive.
+                Got placed at TCS!"
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-slate-200"></div>
+                <div>
+                  <p className="font-bold text-sm">Rahul S.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Engineering Student, Pune
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-card p-6 rounded-xl border border-border shadow-sm">
+              <Quote className="w-8 h-8 text-primary/20 mb-4" />
+              <p className="text-foreground mb-6">
+                "The feedback from the Amazon mentor was eye-opening. He told me
+                exactly why I was getting rejected. Fixed it, and now I'm
+                hired."
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-slate-200"></div>
+                <div>
+                  <p className="font-bold text-sm">Priya M.</p>
+                  <p className="text-xs text-muted-foreground">
+                    MBA Graduate, Indore
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="relative z-10 border-t border-border py-8 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <img
-              src={logo}
-              alt="PrepLyt Logo"
-              className="h-8 w-auto object-contain"
-            />
-            <span className="font-semibold text-foreground">PrepLyt</span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            © 2024 PrepLyt. Built for students, by students.
-          </p>
+      <footer className="py-8 border-t border-border text-center">
+        <div className="flex items-center justify-center gap-2 mb-4">
+          <img src={logo} alt="Logo" className="h-6 w-auto" />
+          <span className="font-bold">PrepLyt</span>
         </div>
+        <p className="text-sm text-muted-foreground">
+          © 2024 PrepLyt. Empowering Tier 2/3 Talent.
+        </p>
       </footer>
     </div>
   );
