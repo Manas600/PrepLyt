@@ -11,13 +11,17 @@ import {
   Star,
   Loader2,
   MessageSquare,
-  Briefcase,
   ExternalLink,
-  Circle,
   Shield,
   Video,
-  GraduationCap,
+  Mic,
+  MicOff,
   Clock,
+  AlertCircle,
+  CheckCircle2,
+  ListTodo,
+  Lightbulb,
+  Briefcase,
 } from "lucide-react";
 
 interface Participant {
@@ -46,28 +50,23 @@ interface Room {
   created_at: string;
 }
 
-// Added Profile interface to replace 'any'
+// Added Profile interface
 interface Profile {
   id: string;
   name: string;
   role: string;
   points: number;
-  // Add other profile fields if necessary
 }
 
 export default function MeetingRoom() {
   const { roomId } = useParams<{ roomId: string }>();
-  // 1. Get 'user' directly to verify auth status, ignoring broken 'profile' context if needed
   const { profile: contextProfile, user, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Local state for profile (Self-healing)
-  // FIX: Replaced <any> with <Profile | null>
   const [activeProfile, setActiveProfile] = useState<Profile | null>(
     contextProfile as Profile | null
   );
-
   const [room, setRoom] = useState<Room | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [feedbackFeed, setFeedbackFeed] = useState<Feedback[]>([]);
@@ -75,43 +74,34 @@ export default function MeetingRoom() {
   const [ratingTarget, setRatingTarget] = useState<Participant | null>(null);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
 
-  // 2. Sync Context Profile if available
+  // Sync Context Profile
   useEffect(() => {
     if (contextProfile) setActiveProfile(contextProfile as Profile);
   }, [contextProfile]);
 
-  // 3. ROBUST AUTH CHECK: Only redirect if NO USER (Auth) is found.
+  // Auth Check
   useEffect(() => {
     if (!loading && !user) {
-      console.log("No authenticated user found. Redirecting to Auth.");
       navigate("/auth");
     }
   }, [user, loading, navigate]);
 
-  // 4. SELF-HEALING: Fetch Profile Locally if Context Failed
+  // Self-Healing Profile Fetch
   useEffect(() => {
     const loadProfileLocally = async () => {
       if (user && !activeProfile) {
-        console.log("Context profile missing. Fetching locally...");
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from("profiles")
           .select("*")
-          .eq("id", user.id) // Correct column is 'id'
+          .eq("id", user.id)
           .single();
-
-        if (data) {
-          console.log("Local profile fetch success.");
-          // Cast data to Profile type since Supabase returns general objects
-          setActiveProfile(data as Profile);
-        } else {
-          console.error("Local profile fetch failed:", error);
-        }
+        if (data) setActiveProfile(data as Profile);
       }
     };
     loadProfileLocally();
   }, [user, activeProfile]);
 
-  // 5. Fetch Room Data
+  // Fetch Room Data
   useEffect(() => {
     if (!roomId) return;
 
@@ -124,10 +114,9 @@ export default function MeetingRoom() {
           .single();
 
         if (error || !data) {
-          console.error("Room fetch error:", error);
           toast({
             title: "Room not found",
-            description: "The session does not exist or has been deleted.",
+            description: "The session does not exist.",
             variant: "destructive",
           });
           navigate("/dashboard");
@@ -137,7 +126,6 @@ export default function MeetingRoom() {
         setRoom(data as unknown as Room);
         setParticipants((data.participants as unknown as Participant[]) || []);
 
-        // Auto-update status if waiting
         if (data.status === "waiting") {
           await supabase
             .from("rooms")
@@ -145,7 +133,7 @@ export default function MeetingRoom() {
             .eq("id", roomId);
         }
       } catch (err) {
-        console.error("Unexpected error fetching room:", err);
+        console.error(err);
       } finally {
         setIsLoadingRoom(false);
       }
@@ -154,7 +142,7 @@ export default function MeetingRoom() {
     fetchRoom();
   }, [roomId, navigate, toast]);
 
-  // 6. Realtime Room Updates
+  // Realtime Updates
   useEffect(() => {
     if (!roomId) return;
 
@@ -191,7 +179,6 @@ export default function MeetingRoom() {
     };
   }, [roomId, navigate, toast]);
 
-  // 7. Logic Functions
   const handleOpenMeetingLink = async () => {
     if (!room?.meeting_link || !activeProfile) return;
 
@@ -236,7 +223,6 @@ export default function MeetingRoom() {
         description: "You are now visible in the roster.",
       });
     } catch (error) {
-      console.error("Check-in error:", error);
       toast({
         title: "Check-in failed",
         description: "Could not join session.",
@@ -259,7 +245,6 @@ export default function MeetingRoom() {
         comment,
       });
 
-      // Update points
       const { data: studentData } = await supabase
         .from("profiles")
         .select("points")
@@ -286,28 +271,10 @@ export default function MeetingRoom() {
     }
   };
 
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  // Render Loading
   if (loading || isLoadingRoom) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  // If Auth user exists but profile is still fetching
-  if (user && !activeProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary mr-2" />
-        <span className="text-muted-foreground">Loading Profile...</span>
       </div>
     );
   }
@@ -317,12 +284,6 @@ export default function MeetingRoom() {
   const isExpert = activeProfile.role === "expert";
   const isAdmin = activeProfile.role === "admin";
   const canRate = isExpert || isAdmin;
-
-  // Filter participants
-  const students = participants.filter((p) => p.role === "student");
-  const experts = participants.filter(
-    (p) => p.role === "expert" || p.role === "admin"
-  );
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
@@ -338,127 +299,260 @@ export default function MeetingRoom() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">{room.topic}</h1>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="capitalize">{room.domain}</span>
-              <span>•</span>
-              <span className="flex items-center gap-1">
-                <Circle
-                  className={`w-2 h-2 ${
-                    room.status === "live"
-                      ? "fill-green-500 text-green-500"
-                      : "fill-yellow-500 text-yellow-500"
-                  }`}
-                />
-                {room.status === "live" ? "Live Session" : "Waiting Room"}
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-foreground">
+                {room.topic}
+              </h1>
+              <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-bold capitalize">
+                {room.domain}
               </span>
             </div>
+            <p className="text-muted-foreground text-sm">
+              Session ID:{" "}
+              <span className="font-mono text-xs">{room.id.slice(0, 8)}</span>
+            </p>
           </div>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* LEFT: Main Action Card */}
-          <div className="lg:col-span-2 bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-            <div className="bg-slate-900 p-8 text-center">
-              <Video className="w-12 h-12 mx-auto mb-4 text-teal-400" />
-              <h2 className="text-2xl font-bold text-white mb-2">
-                Join the Discussion
-              </h2>
-              <p className="text-slate-400 mb-6 max-w-md mx-auto text-sm">
-                The video call happens on an external platform (Google
-                Meet/Zoom). Keep this tab open to see the roster and receive
-                ratings.
-              </p>
-              {room.meeting_link ? (
-                <Button
-                  size="lg"
-                  onClick={handleOpenMeetingLink}
-                  disabled={isCheckingIn}
-                  className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-8"
-                >
-                  {isCheckingIn ? (
-                    <Loader2 className="animate-spin mr-2" />
-                  ) : (
-                    <ExternalLink className="mr-2 h-5 w-5" />
-                  )}
-                  {isCheckingIn ? "Checking in..." : "Open Meeting Link"}
-                </Button>
-              ) : (
-                <Button disabled variant="secondary">
-                  No Link Available
-                </Button>
-              )}
+          {/* LEFT: Main Action & SOPs */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* 1. JOIN ACTION CARD */}
+            <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
+              <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-8 text-center relative overflow-hidden">
+                {/* Background Pattern */}
+                <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-teal-500 to-transparent"></div>
+
+                <Video className="w-12 h-12 mx-auto mb-4 text-teal-400 relative z-10" />
+                <h2 className="text-2xl font-bold text-white mb-2 relative z-10">
+                  Join the Discussion
+                </h2>
+                <p className="text-slate-400 mb-6 max-w-md mx-auto text-sm relative z-10">
+                  The video call happens on an external platform (Google
+                  Meet/Zoom). Keep this tab open for ratings.
+                </p>
+                {room.meeting_link ? (
+                  <Button
+                    size="lg"
+                    onClick={handleOpenMeetingLink}
+                    disabled={isCheckingIn}
+                    className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-8 relative z-10 shadow-lg shadow-teal-900/50"
+                  >
+                    {isCheckingIn ? (
+                      <Loader2 className="animate-spin mr-2" />
+                    ) : (
+                      <ExternalLink className="mr-2 h-5 w-5" />
+                    )}
+                    {isCheckingIn ? "Checking in..." : "Open Meeting Link"}
+                  </Button>
+                ) : (
+                  <Button disabled variant="secondary">
+                    No Link Available
+                  </Button>
+                )}
+              </div>
             </div>
 
-            <div className="p-6 bg-card">
-              <div className="bg-blue-50/50 border border-blue-100 dark:bg-blue-900/20 dark:border-blue-800 rounded-lg p-4">
-                <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2 flex items-center gap-2">
-                  <Shield className="w-4 h-4" /> Instructions
+            {/* 2. STANDARD OPERATING PROCEDURES (SOP) */}
+            <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-6">
+                <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                  Mandatory Read
+                </span>
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-red-500" />
+                  Before You Enter the Room
                 </h3>
-                <ul className="list-disc list-inside text-sm text-blue-800 dark:text-blue-400 space-y-1">
-                  <li>Please keep your camera ON during the session.</li>
-                  <li>Mute your microphone when you are not speaking.</li>
-                  <li>Experts will rate your performance in real-time.</li>
+              </div>
+
+              {/* General Guidelines */}
+              <div className="mb-6 bg-primary/5 border border-primary/10 rounded-lg p-4">
+                <h4 className="font-semibold text-primary mb-3 flex items-center gap-2">
+                  <Shield className="w-4 h-4" /> General Guidelines
+                </h4>
+                <ul className="space-y-2 text-sm text-muted-foreground">
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-1">•</span>
+                    Sessions are conducted strictly by{" "}
+                    <strong>Industry Experts</strong>. Maintain professionalism.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-1">•</span>
+                    Join the session <strong>5 minutes before</strong> the
+                    scheduled time.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-1">•</span>
+                    Ensure you are in a quiet environment with stable internet.
+                  </li>
                 </ul>
+              </div>
+
+              {/* Camera & Audio Grid */}
+              <div className="grid md:grid-cols-2 gap-4 mb-6">
+                <div className="p-4 rounded-lg border border-border bg-muted/20 flex items-start gap-3">
+                  <Video className="w-5 h-5 text-green-500 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-foreground text-sm">
+                      Camera Requirements
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Camera must remain{" "}
+                      <strong className="text-green-500">ON</strong> throughout
+                      the session for evaluation.
+                    </p>
+                  </div>
+                </div>
+                <div className="p-4 rounded-lg border border-border bg-muted/20 flex items-start gap-3">
+                  <MicOff className="w-5 h-5 text-yellow-500 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-foreground text-sm">
+                      Audio Hygiene
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Keep your microphone{" "}
+                      <strong className="text-yellow-500">muted</strong> when
+                      not speaking to avoid echo.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* GD Structure Timeline */}
+              <div className="mb-6">
+                <h4 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-primary" /> GD Structure
+                </h4>
+                <div className="relative pl-4 border-l-2 border-border space-y-6">
+                  <div className="relative">
+                    <div className="absolute -left-[21px] top-0 w-4 h-4 rounded-full bg-primary/20 border-2 border-primary"></div>
+                    <p className="text-sm font-bold text-foreground">
+                      1. Preparation (1 min)
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Read the topic carefully. No speaking allowed.
+                    </p>
+                  </div>
+                  <div className="relative">
+                    <div className="absolute -left-[21px] top-0 w-4 h-4 rounded-full bg-primary/20 border-2 border-primary"></div>
+                    <p className="text-sm font-bold text-foreground">
+                      2. Discussion (10 mins)
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Be concise. Don't interrupt. Support points with logic.
+                    </p>
+                  </div>
+                  <div className="relative">
+                    <div className="absolute -left-[21px] top-0 w-4 h-4 rounded-full bg-primary/20 border-2 border-primary"></div>
+                    <p className="text-sm font-bold text-foreground">
+                      3. Conclusion (2 mins)
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Summarize the group's view. No new points.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Checklist */}
+              <div className="bg-slate-900/5 dark:bg-white/5 p-4 rounded-lg">
+                <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <ListTodo className="w-4 h-4" /> Ready to Join?
+                </h4>
+                <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" /> Camera
+                    is working
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" /> Mic
+                    check done
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" /> Notepad
+                    & Pen ready
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />{" "}
+                    Professional dress code
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* RIGHT: Participants Roster */}
-          <div className="bg-card border border-border rounded-xl shadow-sm h-fit">
-            <div className="p-4 border-b border-border">
-              <h3 className="font-semibold flex items-center gap-2">
-                <Users className="w-5 h-5 text-primary" />
-                Participants ({participants.length})
-              </h3>
-            </div>
-            <div className="p-4 space-y-3 max-h-[500px] overflow-y-auto">
-              {participants.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold
-                      ${
-                        p.role === "expert"
-                          ? "bg-purple-100 text-purple-700"
-                          : p.role === "admin"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-teal-100 text-teal-700"
-                      }`}
-                    >
-                      {p.name.charAt(0)}
+          {/* RIGHT: Participants Roster (Sticky on Desktop) */}
+          <div className="h-fit space-y-6">
+            <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden sticky top-6">
+              <div className="p-4 border-b border-border bg-muted/30">
+                <h3 className="font-semibold flex items-center gap-2 text-foreground">
+                  <Users className="w-5 h-5 text-primary" />
+                  Roster ({participants.length})
+                </h3>
+              </div>
+              <div className="p-4 space-y-3 max-h-[500px] overflow-y-auto">
+                {participants.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold
+                        ${
+                          p.role === "expert"
+                            ? "bg-purple-100 text-purple-700"
+                            : p.role === "admin"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-primary/10 text-primary"
+                        }`}
+                      >
+                        {p.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {p.name}
+                        </p>
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                          {p.role}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-medium">{p.name}</p>
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                        {p.role}
-                      </p>
-                    </div>
-                  </div>
 
-                  {/* Rating Button */}
-                  {canRate && p.role === "student" && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-muted-foreground hover:text-yellow-500"
-                      onClick={() => setRatingTarget(p)}
-                      title={`Rate ${p.name}`}
-                    >
-                      <Star className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-              {participants.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground text-sm">
-                  Waiting for participants...
-                </div>
-              )}
+                    {/* Rating Button */}
+                    {canRate && p.role === "student" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-yellow-500 hover:bg-yellow-500/10"
+                        onClick={() => setRatingTarget(p)}
+                        title={`Rate ${p.name}`}
+                      >
+                        <Star className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {participants.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground text-sm">
+                    Waiting for participants...
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Quick Tips for Students */}
+            {!canRate && (
+              <div className="bg-yellow-50/50 border border-yellow-100 dark:bg-yellow-900/10 dark:border-yellow-800 p-4 rounded-xl">
+                <h4 className="font-semibold text-yellow-800 dark:text-yellow-500 mb-2 flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4" /> Pro Tip
+                </h4>
+                <p className="text-xs text-yellow-700 dark:text-yellow-600">
+                  Don't just speak often; speak with value. Quality of points{" "}
+                  {">"} Quantity of words.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
