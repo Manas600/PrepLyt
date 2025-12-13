@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom"; // Added useLocation
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth, AppRole } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Lock, User, Briefcase, Shield } from "lucide-react";
+import {
+  Loader2,
+  Lock,
+  User,
+  Briefcase,
+  Shield,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import logo from "@/assets/logo.png";
 
 export default function Auth() {
@@ -25,13 +33,16 @@ export default function Auth() {
   const [role, setRole] = useState<AppRole>("student");
   const [adminSecret, setAdminSecret] = useState("");
 
+  // VISIBILITY STATES
+  const [showPassword, setShowPassword] = useState(false);
+  const [showAdminSecret, setShowAdminSecret] = useState(false);
+
   const [isLoading, setIsLoading] = useState(false);
   const { signUp, signIn, user, loading } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation(); // Hook to get URL params
+  const location = useLocation();
   const { toast } = useToast();
 
-  // EFFECT: Check URL for 'role' parameter on mount
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const roleParam = searchParams.get("role");
@@ -74,8 +85,8 @@ export default function Auth() {
           title: "Please confirm your email",
           description: `Hey, ${role}!`,
         });
+        setIsLogin(true);
       }
-      navigate("/dashboard");
     } catch (error: any) {
       let msg = error.message;
       if (msg.includes("invalid_credentials"))
@@ -102,7 +113,6 @@ export default function Auth() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-4 duration-500">
-        {/* BRANDING HEADER */}
         <div className="text-center mb-8 flex flex-col items-center">
           <img
             src={logo}
@@ -115,7 +125,6 @@ export default function Auth() {
           <p className="text-muted-foreground mt-2">Your Interview Companion</p>
         </div>
 
-        {/* LOGIN CARD */}
         <Card className="border-border shadow-xl bg-card">
           <CardHeader>
             <CardTitle className="text-xl text-center text-foreground">
@@ -153,7 +162,6 @@ export default function Auth() {
                 </TabsTrigger>
               </TabsList>
 
-              {/* ICONS */}
               <div className="mt-4 mb-6 text-center">
                 {role === "student" && (
                   <div className="flex flex-col items-center text-primary animate-in zoom-in-95">
@@ -216,14 +224,29 @@ export default function Auth() {
 
               <div className="space-y-2">
                 <Label className="text-foreground">Password</Label>
-                <Input
-                  required
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="bg-background border-input text-foreground"
-                />
+                <div className="relative">
+                  <Input
+                    required
+                    type={showPassword ? "text" : "password"} // Dynamic Type
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="bg-background border-input text-foreground pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-muted-foreground hover:text-primary"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
               </div>
 
               {!isLogin && role === "admin" && (
@@ -231,13 +254,28 @@ export default function Auth() {
                   <div className="flex items-center gap-2 mb-1 text-foreground font-semibold text-sm">
                     <Lock size={14} /> Admin Verification
                   </div>
-                  <Input
-                    type="password"
-                    placeholder="Secret Code (admin123)"
-                    value={adminSecret}
-                    onChange={(e) => setAdminSecret(e.target.value)}
-                    className="bg-background"
-                  />
+                  <div className="relative">
+                    <Input
+                      type={showAdminSecret ? "text" : "password"} // Dynamic Type
+                      placeholder="Secret Code (admin123)"
+                      value={adminSecret}
+                      onChange={(e) => setAdminSecret(e.target.value)}
+                      className="bg-background pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-muted-foreground hover:text-primary"
+                      onClick={() => setShowAdminSecret(!showAdminSecret)}
+                    >
+                      {showAdminSecret ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               )}
 
