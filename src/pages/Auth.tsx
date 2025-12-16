@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { useAuth, AppRole } from "@/contexts/AuthContext";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useNavigate, useLocation } from "react-router-dom"; // Added useLocation
+import { useAuth, AppRole } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
@@ -12,16 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
-import {
-  Loader2,
-  Lock,
-  User,
-  Briefcase,
-  Shield,
-  Eye,
-  EyeOff,
-} from "lucide-react";
+import { useToast } from '@/hooks/use-toast';
+import { Loader2, Lock, User, Briefcase, Shield, Eye, EyeOff } from "lucide-react";
 import logo from "@/assets/logo.png";
 
 export default function Auth() {
@@ -43,16 +35,18 @@ export default function Auth() {
   const location = useLocation();
   const { toast } = useToast();
 
+  // CHECK URL PARAMS FOR ROLE AND MODE
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const roleParam = searchParams.get("role");
-    if (
-      roleParam &&
-      (roleParam === "student" ||
-        roleParam === "expert" ||
-        roleParam === "admin")
-    ) {
+    const modeParam = searchParams.get("mode");
+
+    if (roleParam && (roleParam === "student" || roleParam === "expert" || roleParam === "admin")) {
       setRole(roleParam as AppRole);
+    }
+
+    if (modeParam === 'signup') {
+      setIsLogin(false);
     }
   }, [location]);
 
@@ -227,7 +221,7 @@ export default function Auth() {
                 <div className="relative">
                   <Input
                     required
-                    type={showPassword ? "text" : "password"} // Dynamic Type
+                    type={showPassword ? "text" : "password"}
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -256,7 +250,7 @@ export default function Auth() {
                   </div>
                   <div className="relative">
                     <Input
-                      type={showAdminSecret ? "text" : "password"} // Dynamic Type
+                      type={showAdminSecret ? "text" : "password"}
                       placeholder="Secret Code (admin123)"
                       value={adminSecret}
                       onChange={(e) => setAdminSecret(e.target.value)}
