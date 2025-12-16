@@ -301,7 +301,7 @@ export default function Index() {
           <img src={logo} alt="Logo" className="h-8 w-auto grayscale hover:grayscale-0 transition-all" />
           <span className="font-bold text-xl text-foreground">PrepLyt</span>
         </div>
-        <p className="text-muted-foreground text-sm">© 2024 PrepLyt. Empowering Tier 2/3 Talent.</p>
+        <p className="text-muted-foreground text-sm">© 2024 PrepLyt. Empowering Talent.</p>
       </footer>
     </div>
   );
