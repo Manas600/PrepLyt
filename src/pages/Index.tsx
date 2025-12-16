@@ -159,7 +159,7 @@ export default function Index() {
               {
                 icon: Video,
                 title: "Real-World Simulation",
-                desc: "You speak, argue, and lead in a live video environment with 10 peers. It's as close to the real thing as it gets.",
+                desc: "You speak, debate, and lead in a live video environment with 10 peers. It's as close to the real thing as it gets.",
                 color: "text-blue-500",
                 bg: "bg-blue-500/10",
                 border: "border-blue-500/20"
